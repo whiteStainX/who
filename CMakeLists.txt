@@ -16,6 +16,7 @@ endif()
 # --- sources ---
 add_executable(who
   src/main.cpp
+  src/dsp.cpp
   external/kissfft/kiss_fft.c
 )
 

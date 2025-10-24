@@ -25,6 +25,13 @@
 - [x] Stream samples into a single-producer/single-consumer ring buffer with drop tracking.
 - [x] Consume audio in the render loop to compute RMS/peak metrics and display live debug info.
 
+## Phase 3 – DSP Engine ✅
+
+- [x] Accumulate captured audio into Hann-windowed frames with 50% overlap.
+- [x] Execute kissfft on each frame to obtain complex spectra.
+- [x] Collapse bins into 16 logarithmically spaced bands with attack/release smoothing.
+- [x] Surface the real-time band meter inside the renderer for verification.
+
 ## Next Focus
 
-- Phase 3: build the DSP engine that windows buffered audio, runs FFT via kissfft, and produces smoothed band energies for the renderer.
+- Phase 4: map smoothed band energies to the grid colors and brightness for a reactive display.
