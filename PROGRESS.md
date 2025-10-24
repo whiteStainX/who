@@ -19,6 +19,12 @@
 - [x] Add consistent gaps between grid cells to match the reference styling.
 - [x] Enforce square cell geometry that adapts to the terminal's limiting dimension.
 
+## Phase 2 – Audio Input ✅
+
+- [x] Integrate `miniaudio` capture at 48 kHz stereo.
+- [x] Stream samples into a single-producer/single-consumer ring buffer with drop tracking.
+- [x] Consume audio in the render loop to compute RMS/peak metrics and display live debug info.
+
 ## Next Focus
 
-- Phase 2: integrate miniaudio, capture audio frames, and push samples into the ring buffer for debugging output.
+- Phase 3: build the DSP engine that windows buffered audio, runs FFT via kissfft, and produces smoothed band energies for the renderer.
