@@ -15,6 +15,8 @@
 
 #include <notcurses/notcurses.h>
 
+#include "dsp.h"
+
 namespace {
 class FloatRingBuffer {
 public:
@@ -217,7 +219,29 @@ RGB hsl_to_rgb(float h, float s, float l) {
                static_cast<uint8_t>(std::round(b * 255.0f))};
 }
 
-void draw_grid(notcurses* nc, int grid_rows, int grid_cols, float time_s, const AudioMetrics& metrics) {
+std::string format_band_meter(const std::vector<float>& bands) {
+    static const std::string glyphs = " .:-=+*#%@";
+    if (bands.empty()) {
+        return "Bands (unavailable)";
+    }
+
+    std::string line = "Bands ";
+    for (float energy : bands) {
+        const float scaled = std::log10(1.0f + std::max(energy, 0.0f) * 9.0f) / std::log10(10.0f);
+        const float normalized = clamp01(scaled);
+        const float position = normalized * static_cast<float>(glyphs.size() - 1);
+        const int idx = static_cast<int>(std::round(position));
+        line.push_back(glyphs[idx]);
+    }
+    return line;
+}
+
+void draw_grid(notcurses* nc,
+               int grid_rows,
+               int grid_cols,
+               float time_s,
+               const AudioMetrics& metrics,
+               const std::vector<float>& bands) {
     ncplane* stdplane = notcurses_stdplane(nc);
     unsigned int plane_rows = 0;
     unsigned int plane_cols = 0;
@@ -278,6 +302,11 @@ void draw_grid(notcurses* nc, int grid_rows, int grid_cols, float time_s, const 
                       metrics.rms,
                       metrics.peak,
                       metrics.dropped);
+
+    if (overlay_y + 1 < static_cast<int>(plane_rows)) {
+        const std::string band_meter = format_band_meter(bands);
+        ncplane_printf_yx(stdplane, overlay_y + 1, overlay_x, "%s", band_meter.c_str());
+    }
 }
 
 } // namespace
@@ -290,6 +319,11 @@ int main() {
     constexpr std::size_t ring_frames = 8192;
     AudioEngine audio(sample_rate, channels, ring_frames);
     const bool audio_active = audio.start();
+
+    constexpr std::size_t fft_size = 1024;
+    constexpr std::size_t hop_size = fft_size / 4;
+    constexpr std::size_t bands = 32;
+    DspEngine dsp(sample_rate, channels, fft_size, hop_size, bands);
 
     notcurses_options opts{};
     opts.flags = NCOPTION_SUPPRESS_BANNERS;
@@ -319,6 +353,7 @@ int main() {
         if (audio_active) {
             const std::size_t samples_read = audio.read_samples(audio_scratch.data(), audio_scratch.size());
             if (samples_read > 0) {
+                dsp.push_samples(audio_scratch.data(), samples_read);
                 double sum_squares = 0.0;
                 float peak_value = 0.0f;
                 for (std::size_t i = 0; i < samples_read; ++i) {
@@ -336,7 +371,7 @@ int main() {
             audio_metrics.dropped = audio.dropped_samples();
         }
 
-        draw_grid(nc, grid_rows, grid_cols, time_s, audio_metrics);
+        draw_grid(nc, grid_rows, grid_cols, time_s, audio_metrics, dsp.band_energies());
 
         if (notcurses_render(nc) != 0) {
             std::cerr << "Failed to render frame" << std::endl;
