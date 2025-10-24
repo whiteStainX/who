@@ -45,8 +45,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    constexpr int grid_rows = 16;
-    constexpr int grid_cols = 16;
+    int grid_rows = 16;
+    int grid_cols = 16;
+    constexpr int min_grid_dim = 8;
+    constexpr int max_grid_dim = 32;
+    float sensitivity = 1.0f;
+    constexpr float min_sensitivity = 0.2f;
+    constexpr float max_sensitivity = 5.0f;
+    constexpr float sensitivity_step = 0.1f;
+    who::VisualizationMode mode = who::VisualizationMode::Bands;
     constexpr std::chrono::duration<double> frame_time(1.0 / 60.0);
 
     const std::size_t scratch_samples = std::max<std::size_t>(4096, ring_frames * static_cast<std::size_t>(channels));
@@ -83,7 +90,15 @@ int main(int argc, char** argv) {
             audio_metrics.dropped = audio.dropped_samples();
         }
 
-        who::draw_grid(nc, grid_rows, grid_cols, time_s, audio_metrics, dsp.band_energies(), audio.using_file_stream());
+        who::draw_grid(nc,
+                       grid_rows,
+                       grid_cols,
+                       time_s,
+                       mode,
+                       sensitivity,
+                       audio_metrics,
+                       dsp.band_energies(),
+                       audio.using_file_stream());
 
         if (notcurses_render(nc) != 0) {
             std::cerr << "Failed to render frame" << std::endl;
@@ -101,6 +116,44 @@ int main(int argc, char** argv) {
             if (key == 'q' || key == 'Q') {
                 running = false;
                 break;
+            }
+            if (key == NCKEY_UP) {
+                grid_rows = std::min(grid_rows + 1, max_grid_dim);
+                continue;
+            }
+            if (key == NCKEY_DOWN) {
+                grid_rows = std::max(grid_rows - 1, min_grid_dim);
+                continue;
+            }
+            if (key == NCKEY_RIGHT) {
+                grid_cols = std::min(grid_cols + 1, max_grid_dim);
+                continue;
+            }
+            if (key == NCKEY_LEFT) {
+                grid_cols = std::max(grid_cols - 1, min_grid_dim);
+                continue;
+            }
+            if (key == 'm' || key == 'M') {
+                switch (mode) {
+                case who::VisualizationMode::Bands:
+                    mode = who::VisualizationMode::Radial;
+                    break;
+                case who::VisualizationMode::Radial:
+                    mode = who::VisualizationMode::Trails;
+                    break;
+                case who::VisualizationMode::Trails:
+                    mode = who::VisualizationMode::Bands;
+                    break;
+                }
+                continue;
+            }
+            if (key == '[') {
+                sensitivity = std::max(min_sensitivity, sensitivity - sensitivity_step);
+                continue;
+            }
+            if (key == ']') {
+                sensitivity = std::min(max_sensitivity, sensitivity + sensitivity_step);
+                continue;
             }
             if (key == NCKEY_RESIZE) {
                 break;

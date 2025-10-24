@@ -50,6 +50,12 @@
 - [x] Moved rendering math into a dedicated `renderer` module for cleaner visual logic ownership.
 - [x] Slimmed `main.cpp` to configuration and orchestration responsibilities to keep future phases maintainable.
 
+## Phase 5 – Runtime Controls & Modes ✅
+
+- [x] Hooked arrow-key handlers to resize the grid dynamically between 8×8 and 32×32 without restarting.
+- [x] Added a mode toggle cycling across band stripes, radial bloom, and time-trail visualizations.
+- [x] Introduced adjustable sensitivity to fine-tune brightness response for quiet or loud sources.
+
 ## Next Focus
 
-- Phase 5: add runtime controls and visualization mode toggles.
+- Phase 5.5: refine interaction polish and prep renderer diffing optimizations.
