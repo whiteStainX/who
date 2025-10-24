@@ -10,10 +10,12 @@ extern "C" {
 #include <kiss_fft.h>
 }
 
+namespace who {
+
 namespace {
 constexpr float kMinDisplayFrequency = 20.0f;
 constexpr float kPi = 3.14159265358979323846f;
-}
+} // namespace
 
 DspEngine::DspEngine(std::uint32_t sample_rate,
                      std::uint32_t channels,
@@ -152,3 +154,5 @@ void DspEngine::process_frame() {
         band_energies_[band] = current + (target - current) * alpha;
     }
 }
+
+} // namespace who

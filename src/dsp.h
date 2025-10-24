@@ -10,6 +10,8 @@ extern "C" {
 #include <kiss_fft.h>
 }
 
+namespace who {
+
 class DspEngine {
 public:
     static constexpr std::size_t kDefaultFftSize = 1024;
@@ -50,3 +52,5 @@ private:
     float smoothing_attack_;
     float smoothing_release_;
 };
+
+} // namespace who
