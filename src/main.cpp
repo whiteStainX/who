@@ -72,8 +72,12 @@ void draw_grid(notcurses* nc, int grid_rows, int grid_cols, float time_s) {
     unsigned int plane_cols = 0;
     ncplane_dim_yx(stdplane, &plane_rows, &plane_cols);
 
-    const int cell_h = std::max(1, (int)plane_rows / grid_rows);
-    const int cell_w = std::max(2, (int)plane_cols / grid_cols);
+    // To make cells square, assume a 2:1 character aspect ratio.
+    const int cell_h_from_rows = (int)plane_rows / grid_rows;
+    const int cell_h_from_cols = (int)plane_cols / (grid_cols * 2);
+    const int cell_h = std::max(1, std::min(cell_h_from_rows, cell_h_from_cols));
+    const int cell_w = cell_h * 2;
+
     const int grid_height = cell_h * grid_rows;
     const int grid_width = cell_w * grid_cols;
 
@@ -83,7 +87,10 @@ void draw_grid(notcurses* nc, int grid_rows, int grid_cols, float time_s) {
     ncplane_erase(stdplane);
     ncplane_set_fg_default(stdplane);
 
-    const std::string cell_fill(cell_w, ' ');
+    const int v_gap = 1;
+    const int h_gap = 1;
+    const int fill_w = std::max(0, cell_w - h_gap);
+    const std::string cell_fill(fill_w, ' ');
 
     for (int r = 0; r < grid_rows; ++r) {
         for (int c = 0; c < grid_cols; ++c) {
@@ -94,13 +101,13 @@ void draw_grid(notcurses* nc, int grid_rows, int grid_cols, float time_s) {
             const float saturation = 0.5f + 0.4f * shimmer;
             const RGB color = hsl_to_rgb(base_hue, saturation, brightness);
 
-            for (int dy = 0; dy < cell_h; ++dy) {
+            for (int dy = 0; dy < cell_h - v_gap; ++dy) {
                 const int y = offset_y + r * cell_h + dy;
-                if (y >= plane_rows) {
+                if (y >= (int)plane_rows) {
                     continue;
                 }
                 const int x = offset_x + c * cell_w;
-                if (x >= plane_cols) {
+                if (x >= (int)plane_cols) {
                     continue;
                 }
 
