@@ -6,5 +6,11 @@
 - [x] Vendor drops for `miniaudio` and `kissfft` added under `external/`.
 - [x] Minimal notcurses-based `main.cpp` builds, opens a blank terminal window, and exits cleanly.
 
+## Phase 1 – Core Loop Prototype ✅
+- [x] Initialize notcurses and render a centered 16×16 grid using background-color blocks.
+- [x] Animate brightness and hue over time with smooth sine-based motion.
+- [x] Maintain a steady ~60 FPS loop with sleep-based pacing.
+- [x] Poll input to quit on `q`/`Q` and respond immediately to terminal resize events.
+
 ## Next Focus
-- Phase 1: implement the static grid renderer and animation loop (no audio input yet).
+- Phase 2: integrate miniaudio, capture audio frames, and push samples into the ring buffer for debugging output.
