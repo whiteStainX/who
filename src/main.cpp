@@ -320,7 +320,10 @@ int main() {
     AudioEngine audio(sample_rate, channels, ring_frames);
     const bool audio_active = audio.start();
 
-    DspEngine dsp(sample_rate, channels);
+    constexpr std::size_t fft_size = 1024;
+    constexpr std::size_t hop_size = fft_size / 4;
+    constexpr std::size_t bands = 32;
+    DspEngine dsp(sample_rate, channels, fft_size, hop_size, bands);
 
     notcurses_options opts{};
     opts.flags = NCOPTION_SUPPRESS_BANNERS;
