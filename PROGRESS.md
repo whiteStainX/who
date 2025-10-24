@@ -38,6 +38,12 @@
 - [x] Downmixed decoded frames to mono, resampled mismatched rates to 48 kHz, and paced delivery to mimic live capture.
 - [x] Integrated the streaming path with existing metrics and visualization overlays.
 
+## Phase 4 – Reactive Visual Mapping ✅
+
+- [x] Projected log-spaced band energies onto grid rows so each stripe responds to its frequency range.
+- [x] Applied adaptive gain control and logarithmic scaling to keep brightness responsive across input levels.
+- [x] Blended temporal waves with per-band saturation for fluid, audio-driven color motion.
+
 ## Next Focus
 
-- Phase 4: map smoothed band energies to the grid colors and brightness for a reactive display.
+- Phase 5: add runtime controls and visualization mode toggles.
