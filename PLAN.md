@@ -191,7 +191,6 @@ make -j$(nproc)
 - Config file (`who.toml`) for persistent settings.
 - Plugin-like system for custom visual modes.
 - Cross-platform (Windows, macOS, Linux).
-- Audio file input (offline visualization).
 
 **Output:** Extensible framework for terminal art.
 
