@@ -88,7 +88,7 @@ void draw_grid(notcurses* nc, int grid_rows, int grid_cols, float time_s) {
     ncplane_set_fg_default(stdplane);
 
     const int v_gap = 1;
-    const int h_gap = 1;
+    const int h_gap = 2;
     const int fill_w = std::max(0, cell_w - h_gap);
     const std::string cell_fill(fill_w, ' ');
 
