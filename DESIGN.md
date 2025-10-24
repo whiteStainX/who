@@ -34,6 +34,11 @@ Visual Mapper (brightness, hue logic)
 Renderer (notcurses)
 ```
 
+### Audio Input Sources
+
+- **Live Capture (default):** Uses `ma_device` to record stereo 48 kHz input from the system microphone, writing directly into a lock-free ring buffer.
+- **File Stream (`--file <path>`):** Uses `ma_decoder` to read compressed/PCM assets, downmixes to mono, resamples to 48 kHz with `ma_resampler`, and paces chunks to emulate real-time capture before feeding the same ring buffer.
+
 ### Thread Roles
 
 - **Audio Thread:** Captures frames, writes to a lock-free buffer.

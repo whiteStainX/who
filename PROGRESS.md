@@ -32,6 +32,12 @@
 - [x] Collapse bins into 16 logarithmically spaced bands with attack/release smoothing.
 - [x] Surface the real-time band meter inside the renderer for verification.
 
+## Phase 3.5 – File Streaming Input ✅
+
+- [x] Added an optional file-backed audio source using `ma_decoder` to feed the capture ring buffer.
+- [x] Downmixed decoded frames to mono, resampled mismatched rates to 48 kHz, and paced delivery to mimic live capture.
+- [x] Integrated the streaming path with existing metrics and visualization overlays.
+
 ## Next Focus
 
 - Phase 4: map smoothed band energies to the grid colors and brightness for a reactive display.

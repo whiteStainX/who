@@ -1,7 +1,6 @@
 # who
 
-A lean, modern C++ terminal-based audio visualizer. The current milestone focuses on establishing the build skeleton so future p
-hases can layer in rendering, audio capture, and DSP features.
+A lean, modern C++ terminal-based audio visualizer. The current milestone includes a working notcurses renderer, real-time audio capture, FFT-based band analysis, and an optional file-streaming path for environments without live recording capability.
 
 ## Prerequisites
 
@@ -27,8 +26,7 @@ cmake --build build
 After a successful build, run the executable from the repository root:
 
 ```bash
-./build/who
+./build/who [--file path/to/audio.wav]
 ```
 
-The Phase 0 program simply opens and closes a blank notcurses-managed terminal window, verifying that the toolchain and link ste
-ps are configured correctly.
+Running without flags opens the real-time capture path (requires microphone permissions). Supplying `--file` (or `-f`) streams audio from disk through the same DSP chain. Supported formats depend on miniaudio's decoder (WAV/MP3/FLAC and more). The file path option downmixes to mono, resamples to 48 kHz, and feeds the visualizer at real-time speed so you can test the visualization without capture hardware.

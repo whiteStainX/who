@@ -8,6 +8,7 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #define MINIAUDIO_IMPLEMENTATION
@@ -86,48 +87,120 @@ struct AudioMetrics {
 
 class AudioEngine {
 public:
-    AudioEngine(ma_uint32 sample_rate, ma_uint32 channels, std::size_t ring_frames)
+    AudioEngine(ma_uint32 sample_rate,
+                ma_uint32 channels,
+                std::size_t ring_frames,
+                std::string file_path = {})
         : sample_rate_(sample_rate),
           channels_(channels),
           ring_buffer_(ring_frames * channels),
           dropped_samples_(0),
-          device_initialized_(false) {}
+          mode_(file_path.empty() ? Mode::Capture : Mode::FileStream),
+          file_path_(std::move(file_path)),
+          device_initialized_(false),
+          decoder_initialized_(false),
+          decoder_channels_(0),
+          decoder_sample_rate_(0),
+          resampler_initialized_(false),
+          stop_stream_thread_(false) {}
 
     ~AudioEngine() { stop(); }
 
     bool start() {
-        if (device_initialized_) {
+        if (mode_ == Mode::Capture) {
+            if (device_initialized_) {
+                return true;
+            }
+
+            ma_device_config config = ma_device_config_init(ma_device_type_capture);
+            config.sampleRate = sample_rate_;
+            config.capture.format = ma_format_f32;
+            config.capture.channels = channels_;
+            config.dataCallback = &AudioEngine::data_callback;
+            config.pUserData = this;
+
+            if (ma_device_init(nullptr, &config, &device_) != MA_SUCCESS) {
+                return false;
+            }
+
+            if (ma_device_start(&device_) != MA_SUCCESS) {
+                ma_device_uninit(&device_);
+                return false;
+            }
+
+            device_initialized_ = true;
+            dropped_samples_.store(0, std::memory_order_relaxed);
             return true;
         }
 
-        ma_device_config config = ma_device_config_init(ma_device_type_capture);
-        config.sampleRate = sample_rate_;
-        config.capture.format = ma_format_f32;
-        config.capture.channels = channels_;
-        config.dataCallback = &AudioEngine::data_callback;
-        config.pUserData = this;
+        if (decoder_initialized_) {
+            return true;
+        }
 
-        if (ma_device_init(nullptr, &config, &device_) != MA_SUCCESS) {
+        if (file_path_.empty()) {
             return false;
         }
 
-        if (ma_device_start(&device_) != MA_SUCCESS) {
-            ma_device_uninit(&device_);
+        ma_decoder_config decoder_config = ma_decoder_config_init(ma_format_f32, 0, 0);
+        if (ma_decoder_init_file(file_path_.c_str(), &decoder_config, &decoder_) != MA_SUCCESS) {
             return false;
         }
 
-        device_initialized_ = true;
+        decoder_channels_ = decoder_.outputChannels;
+        decoder_sample_rate_ = decoder_.outputSampleRate;
+        if (decoder_channels_ == 0) {
+            decoder_channels_ = 1;
+        }
+        if (decoder_sample_rate_ == 0) {
+            decoder_sample_rate_ = sample_rate_;
+        }
+
+        if (decoder_sample_rate_ != sample_rate_) {
+            ma_resampler_config resampler_config =
+                ma_resampler_config_init(ma_format_f32, channels_, decoder_sample_rate_, sample_rate_, ma_resample_algorithm_linear);
+            resampler_config.channels = channels_;
+            if (ma_resampler_init(&resampler_config, nullptr, &resampler_) != MA_SUCCESS) {
+                ma_decoder_uninit(&decoder_);
+                decoder_initialized_ = false;
+                return false;
+            }
+            resampler_initialized_ = true;
+        }
+
+        decoder_initialized_ = true;
+        stop_stream_thread_.store(false, std::memory_order_relaxed);
+        stream_thread_ = std::thread(&AudioEngine::file_stream_loop, this);
         dropped_samples_.store(0, std::memory_order_relaxed);
         return true;
     }
 
     void stop() {
-        if (!device_initialized_) {
+        if (mode_ == Mode::Capture) {
+            if (!device_initialized_) {
+                return;
+            }
+
+            ma_device_uninit(&device_);
+            device_initialized_ = false;
             return;
         }
 
-        ma_device_uninit(&device_);
-        device_initialized_ = false;
+        if (!decoder_initialized_) {
+            return;
+        }
+
+        stop_stream_thread_.store(true, std::memory_order_relaxed);
+        if (stream_thread_.joinable()) {
+            stream_thread_.join();
+        }
+
+        if (resampler_initialized_) {
+            ma_resampler_uninit(&resampler_, nullptr);
+            resampler_initialized_ = false;
+        }
+
+        ma_decoder_uninit(&decoder_);
+        decoder_initialized_ = false;
     }
 
     std::size_t read_samples(float* dest, std::size_t max_samples) {
@@ -139,6 +212,8 @@ public:
     }
 
     ma_uint32 channels() const { return channels_; }
+
+    bool using_file_stream() const { return mode_ == Mode::FileStream; }
 
 private:
     static void data_callback(ma_device* device, void* /*output*/, const void* input, ma_uint32 frame_count) {
@@ -155,12 +230,84 @@ private:
         }
     }
 
+    void file_stream_loop() {
+        if (!decoder_initialized_) {
+            return;
+        }
+
+        constexpr std::size_t chunk_frames = 512;
+        std::vector<float> decode_buffer(chunk_frames * decoder_channels_);
+        std::vector<float> mono_buffer(chunk_frames, 0.0f);
+        const double ratio = static_cast<double>(sample_rate_) / static_cast<double>(decoder_sample_rate_);
+        const std::size_t max_output_frames = resampler_initialized_
+                                                  ? static_cast<std::size_t>(std::ceil(chunk_frames * ratio)) + 8
+                                                  : chunk_frames;
+        std::vector<float> resample_buffer(resampler_initialized_ ? max_output_frames : 0);
+
+        while (!stop_stream_thread_.load(std::memory_order_relaxed)) {
+            ma_uint64 frames_requested = chunk_frames;
+            ma_uint64 frames_read = 0;
+            ma_result result =
+                ma_decoder_read_pcm_frames(&decoder_, decode_buffer.data(), frames_requested, &frames_read);
+            if (result != MA_SUCCESS || frames_read == 0) {
+                ma_decoder_seek_to_pcm_frame(&decoder_, 0);
+                continue;
+            }
+
+            const std::size_t frames_available = static_cast<std::size_t>(frames_read);
+            for (std::size_t i = 0; i < frames_available; ++i) {
+                double sum = 0.0;
+                for (std::size_t ch = 0; ch < decoder_channels_; ++ch) {
+                    sum += decode_buffer[i * decoder_channels_ + ch];
+                }
+                mono_buffer[i] = static_cast<float>(sum / static_cast<double>(decoder_channels_));
+            }
+
+            const float* data_to_write = mono_buffer.data();
+            std::size_t frames_to_write = frames_available;
+
+            if (resampler_initialized_) {
+                ma_uint64 input_frame_count = frames_read;
+                ma_uint64 output_frame_count = resample_buffer.size();
+                if (ma_resampler_process_pcm_frames(&resampler_, mono_buffer.data(), &input_frame_count,
+                                                    resample_buffer.data(), &output_frame_count) != MA_SUCCESS) {
+                    continue;
+                }
+                frames_to_write = static_cast<std::size_t>(output_frame_count);
+                data_to_write = resample_buffer.data();
+            }
+
+            const std::size_t samples_to_write = frames_to_write * static_cast<std::size_t>(channels_);
+            const std::size_t written = ring_buffer_.write(data_to_write, samples_to_write);
+            if (written < samples_to_write) {
+                dropped_samples_.fetch_add(samples_to_write - written, std::memory_order_relaxed);
+            }
+
+            const double seconds = static_cast<double>(frames_to_write) / static_cast<double>(sample_rate_);
+            if (seconds > 0.0) {
+                std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+            }
+        }
+    }
+
+    enum class Mode { Capture, FileStream };
+
     ma_uint32 sample_rate_;
     ma_uint32 channels_;
     FloatRingBuffer ring_buffer_;
     std::atomic<std::size_t> dropped_samples_;
+    Mode mode_;
+    std::string file_path_;
     ma_device device_{};
     bool device_initialized_;
+    ma_decoder decoder_{};
+    bool decoder_initialized_;
+    ma_uint32 decoder_channels_;
+    ma_uint32 decoder_sample_rate_;
+    ma_resampler resampler_{};
+    bool resampler_initialized_;
+    std::thread stream_thread_;
+    std::atomic<bool> stop_stream_thread_;
 };
 
 struct RGB {
@@ -241,7 +388,8 @@ void draw_grid(notcurses* nc,
                int grid_cols,
                float time_s,
                const AudioMetrics& metrics,
-               const std::vector<float>& bands) {
+               const std::vector<float>& bands,
+               bool file_stream) {
     ncplane* stdplane = notcurses_stdplane(nc);
     unsigned int plane_rows = 0;
     unsigned int plane_cols = 0;
@@ -298,7 +446,7 @@ void draw_grid(notcurses* nc,
     ncplane_set_bg_default(stdplane);
     ncplane_printf_yx(stdplane, overlay_y, overlay_x,
                       "Audio %s | RMS: %.3f | Peak: %.3f | Dropped: %zu",
-                      metrics.active ? "capturing" : "inactive",
+                      metrics.active ? (file_stream ? "file" : "capturing") : "inactive",
                       metrics.rms,
                       metrics.peak,
                       metrics.dropped);
@@ -311,13 +459,23 @@ void draw_grid(notcurses* nc,
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     std::setlocale(LC_ALL, "");
 
+    std::string file_path;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if ((arg == "--file" || arg == "-f") && i + 1 < argc) {
+            file_path = argv[i + 1];
+            ++i;
+        }
+    }
+
     constexpr ma_uint32 sample_rate = 48000;
-    constexpr ma_uint32 channels = 2;
+    const bool use_file_stream = !file_path.empty();
+    const ma_uint32 channels = use_file_stream ? 1 : 2;
     constexpr std::size_t ring_frames = 8192;
-    AudioEngine audio(sample_rate, channels, ring_frames);
+    AudioEngine audio(sample_rate, channels, ring_frames, file_path);
     const bool audio_active = audio.start();
 
     constexpr std::size_t fft_size = 1024;
@@ -338,7 +496,8 @@ int main() {
     constexpr int grid_cols = 16;
     constexpr std::chrono::duration<double> frame_time(1.0 / 60.0);
 
-    std::vector<float> audio_scratch(4096);
+    const std::size_t scratch_samples = std::max<std::size_t>(4096, ring_frames * static_cast<std::size_t>(channels));
+    std::vector<float> audio_scratch(scratch_samples);
     AudioMetrics audio_metrics{};
     audio_metrics.active = audio_active;
 
@@ -371,7 +530,7 @@ int main() {
             audio_metrics.dropped = audio.dropped_samples();
         }
 
-        draw_grid(nc, grid_rows, grid_cols, time_s, audio_metrics, dsp.band_energies());
+        draw_grid(nc, grid_rows, grid_cols, time_s, audio_metrics, dsp.band_energies(), audio.using_file_stream());
 
         if (notcurses_render(nc) != 0) {
             std::cerr << "Failed to render frame" << std::endl;
