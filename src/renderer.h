@@ -29,7 +29,8 @@ void draw_grid(notcurses* nc,
                const AudioMetrics& metrics,
                const std::vector<float>& bands,
                float beat_strength,
-               bool file_stream);
+               bool file_stream,
+               bool show_metrics);
 
 const char* mode_name(VisualizationMode mode);
 const char* palette_name(ColorPalette palette);

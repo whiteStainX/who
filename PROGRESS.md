@@ -68,6 +68,14 @@
 - [x] Implemented a spectral-flux beat detector that drives reactive brightness pops and on-screen metrics.
 - [x] Enhanced radial and trail visual modes with palette-aware hues and beat-influenced motion.
 
-## Next Focus
+## Phase 8 – Configuration & Plug-in Hooks ✅
 
-- Phase 8: configuration scaffolding and plug-in hooks to prepare for scaling.
+- [x] Added a comprehensive `who.toml` manifest covering audio, DSP, visualization, runtime, and plug-in defaults.
+- [x] Loaded configuration at startup with schema validation, command-line overrides, and runtime warnings.
+- [x] Introduced a plug-in manager with built-in beat diagnostics and per-frame notification scaffolding.
+- [x] Exposed configuration-driven toggles for overlays, grid controls, sensitivities, and future expansion.
+- [x] Routed beat diagnostics into a log file so debug output no longer interferes with the terminal renderer.
+
+## Backlog
+
+- [ ] Cross-platform packaging, CI, and distribution improvements.

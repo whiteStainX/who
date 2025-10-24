@@ -141,7 +141,8 @@ void draw_grid(notcurses* nc,
                const AudioMetrics& metrics,
                const std::vector<float>& bands,
                float beat_strength,
-               bool file_stream) {
+               bool file_stream,
+               bool show_metrics) {
     ncplane* stdplane = notcurses_stdplane(nc);
     unsigned int plane_rows = 0;
     unsigned int plane_cols = 0;
@@ -361,6 +362,13 @@ void draw_grid(notcurses* nc,
         ncplane_set_bg_default(stdplane);
         ncplane_printf_yx(stdplane, y, overlay_x, "%*s", width, "");
     };
+
+    if (!show_metrics) {
+        clear_overlay_line(overlay_y);
+        clear_overlay_line(overlay_y + 1);
+        clear_overlay_line(overlay_y + 2);
+        return;
+    }
 
     clear_overlay_line(overlay_y);
     ncplane_set_fg_rgb8(stdplane, 200, 200, 200);
