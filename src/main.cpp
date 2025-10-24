@@ -72,8 +72,12 @@ void draw_grid(notcurses* nc, int grid_rows, int grid_cols, float time_s) {
     unsigned int plane_cols = 0;
     ncplane_dim_yx(stdplane, &plane_rows, &plane_cols);
 
-    const int cell_h = std::max(1, (int)plane_rows / grid_rows);
-    const int cell_w = std::max(2, (int)plane_cols / grid_cols);
+    // To make cells square, assume a 2:1 character aspect ratio.
+    const int cell_h_from_rows = (int)plane_rows / grid_rows;
+    const int cell_h_from_cols = (int)plane_cols / (grid_cols * 2);
+    const int cell_h = std::max(1, std::min(cell_h_from_rows, cell_h_from_cols));
+    const int cell_w = cell_h * 2;
+
     const int grid_height = cell_h * grid_rows;
     const int grid_width = cell_w * grid_cols;
 
