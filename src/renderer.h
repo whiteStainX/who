@@ -14,17 +14,25 @@ enum class VisualizationMode {
     Trails,
 };
 
+enum class ColorPalette {
+    Rainbow,
+    WarmCool,
+};
+
 void draw_grid(notcurses* nc,
                int grid_rows,
                int grid_cols,
                float time_s,
                VisualizationMode mode,
+               ColorPalette palette,
                float sensitivity,
                const AudioMetrics& metrics,
                const std::vector<float>& bands,
+               float beat_strength,
                bool file_stream);
 
 const char* mode_name(VisualizationMode mode);
+const char* palette_name(ColorPalette palette);
 
 } // namespace who
 

@@ -28,6 +28,7 @@ public:
     void push_samples(const float* interleaved_samples, std::size_t count);
 
     const std::vector<float>& band_energies() const { return band_energies_; }
+    float beat_strength() const { return beat_strength_; }
 
 private:
     void compute_band_ranges();
@@ -44,6 +45,7 @@ private:
 
     std::vector<float> band_energies_;
     std::vector<std::pair<std::size_t, std::size_t>> band_bin_ranges_;
+    std::vector<float> prev_magnitudes_;
 
     kiss_fft_cfg fft_cfg_;
     std::vector<kiss_fft_cpx> fft_in_;
@@ -51,6 +53,8 @@ private:
 
     float smoothing_attack_;
     float smoothing_release_;
+    float flux_average_;
+    float beat_strength_;
 };
 
 } // namespace who

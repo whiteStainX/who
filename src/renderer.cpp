@@ -15,6 +15,9 @@ struct Rgb {
 };
 
 struct CellState {
+    float smooth_r{0.0f};
+    float smooth_g{0.0f};
+    float smooth_b{0.0f};
     Rgb color{0, 0, 0};
     bool valid{false};
 };
@@ -117,14 +120,27 @@ const char* mode_name(VisualizationMode mode) {
     }
 }
 
+const char* palette_name(ColorPalette palette) {
+    switch (palette) {
+    case ColorPalette::Rainbow:
+        return "Rainbow";
+    case ColorPalette::WarmCool:
+        return "Warm/Cool";
+    default:
+        return "Unknown";
+    }
+}
+
 void draw_grid(notcurses* nc,
                int grid_rows,
                int grid_cols,
                float time_s,
                VisualizationMode mode,
+               ColorPalette palette,
                float sensitivity,
                const AudioMetrics& metrics,
                const std::vector<float>& bands,
+               float beat_strength,
                bool file_stream) {
     ncplane* stdplane = notcurses_stdplane(nc);
     unsigned int plane_rows = 0;
@@ -198,6 +214,8 @@ void draw_grid(notcurses* nc,
 
     const bool full_refresh = geometry_changed;
 
+    const float beat_flash = clamp01(beat_strength);
+
     for (int r = 0; r < grid_rows; ++r) {
         for (int c = 0; c < grid_cols; ++c) {
             std::size_t band_index = 0;
@@ -262,18 +280,49 @@ void draw_grid(notcurses* nc,
             }
 
             const float hue_shift = std::fmod(time_s * 0.05f + column_phase * 0.15f, 1.0f);
-            const float hue = std::fmod(base_hue + hue_shift, 1.0f);
 
-            const float brightness = clamp01(0.12f + energy_level * 0.82f + time_wave * 0.12f);
-            const float saturation = clamp01(0.55f + energy_level * 0.4f + shimmer * 0.05f);
-            const Rgb color = hsl_to_rgb(hue, saturation, brightness);
-            const std::size_t cell_index = static_cast<std::size_t>(r * grid_cols + c);
-            bool needs_update = full_refresh;
-            if (!needs_update && cell_index < cache.cells.size()) {
-                const CellState& previous = cache.cells[cell_index];
-                needs_update = !previous.valid || previous.color.r != color.r || previous.color.g != color.g ||
-                               previous.color.b != color.b;
+            float hue = std::fmod(base_hue + hue_shift, 1.0f);
+            float saturation = clamp01(0.55f + energy_level * 0.4f + shimmer * 0.05f);
+            float brightness = clamp01(0.12f + energy_level * (0.82f + beat_flash * 0.35f) + time_wave * 0.12f +
+                                       beat_flash * 0.12f);
+
+            if (palette == ColorPalette::WarmCool) {
+                const float warm_cool_base = clamp01(band_mix);
+                const float warm_cool_hue = std::fmod(0.58f - warm_cool_base * 0.42f + shimmer * 0.02f, 1.0f);
+                hue = std::fmod(warm_cool_hue + beat_flash * 0.05f, 1.0f);
+                saturation = clamp01(0.45f + energy_level * 0.35f + shimmer * 0.08f);
+                brightness = clamp01(0.18f + energy_level * (0.75f + beat_flash * 0.45f) + time_wave * 0.08f +
+                                      beat_flash * 0.18f);
             }
+
+            const Rgb target_color = hsl_to_rgb(hue, saturation, brightness);
+            const float target_r = clamp01(static_cast<float>(target_color.r) / 255.0f);
+            const float target_g = clamp01(static_cast<float>(target_color.g) / 255.0f);
+            const float target_b = clamp01(static_cast<float>(target_color.b) / 255.0f);
+
+            const std::size_t cell_index = static_cast<std::size_t>(r * grid_cols + c);
+            if (cell_index >= cache.cells.size()) {
+                continue;
+            }
+
+            CellState& state = cache.cells[cell_index];
+            if (!state.valid || full_refresh) {
+                state.smooth_r = target_r;
+                state.smooth_g = target_g;
+                state.smooth_b = target_b;
+            } else {
+                constexpr float smoothing = 0.22f;
+                state.smooth_r += (target_r - state.smooth_r) * smoothing;
+                state.smooth_g += (target_g - state.smooth_g) * smoothing;
+                state.smooth_b += (target_b - state.smooth_b) * smoothing;
+            }
+
+            const Rgb color{static_cast<uint8_t>(std::round(clamp01(state.smooth_r) * 255.0f)),
+                            static_cast<uint8_t>(std::round(clamp01(state.smooth_g) * 255.0f)),
+                            static_cast<uint8_t>(std::round(clamp01(state.smooth_b) * 255.0f))};
+
+            bool needs_update = full_refresh || !state.valid || state.color.r != color.r || state.color.g != color.g ||
+                                state.color.b != color.b;
 
             if (!needs_update) {
                 continue;
@@ -293,10 +342,8 @@ void draw_grid(notcurses* nc,
                 ncplane_putstr_yx(stdplane, y, x, cell_fill.c_str());
             }
 
-            if (cell_index < cache.cells.size()) {
-                cache.cells[cell_index].color = color;
-                cache.cells[cell_index].valid = true;
-            }
+            state.color = color;
+            state.valid = true;
         }
     }
 
@@ -319,9 +366,10 @@ void draw_grid(notcurses* nc,
     ncplane_set_fg_rgb8(stdplane, 200, 200, 200);
     ncplane_set_bg_default(stdplane);
     ncplane_printf_yx(stdplane, overlay_y, overlay_x,
-                      "Audio %s | Mode: %s | Grid: %dx%d | Sens: %.2f",
+                      "Audio %s | Mode: %s | Palette: %s | Grid: %dx%d | Sens: %.2f",
                       metrics.active ? (file_stream ? "file" : "capturing") : "inactive",
                       mode_name(mode),
+                      palette_name(palette),
                       grid_rows,
                       grid_cols,
                       sensitivity);
@@ -331,10 +379,11 @@ void draw_grid(notcurses* nc,
         ncplane_set_fg_rgb8(stdplane, 200, 200, 200);
         ncplane_set_bg_default(stdplane);
         ncplane_printf_yx(stdplane, overlay_y + 1, overlay_x,
-                          "RMS: %.3f | Peak: %.3f | Dropped: %zu",
+                          "RMS: %.3f | Peak: %.3f | Dropped: %zu | Beat: %.2f",
                           metrics.rms,
                           metrics.peak,
-                          metrics.dropped);
+                          metrics.dropped,
+                          beat_flash);
     }
 
     if (overlay_y + 2 < static_cast<int>(plane_rows)) {

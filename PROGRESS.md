@@ -62,6 +62,12 @@
 - [x] Reused precomputed fill buffers and guaranteed a minimum draw height so tight layouts still render crisply.
 - [x] Cleared and repainted overlay lines incrementally to avoid stale text while keeping the main grid diff-based.
 
+## Phase 7 – Extensions ✅
+
+- [x] Introduced selectable rainbow and warm/cool palettes with smoothing to ease transitions between color states.
+- [x] Implemented a spectral-flux beat detector that drives reactive brightness pops and on-screen metrics.
+- [x] Enhanced radial and trail visual modes with palette-aware hues and beat-influenced motion.
+
 ## Next Focus
 
-- Phase 7: extensions to add palettes, beat pops, and richer mode behaviors.
+- Phase 8: configuration scaffolding and plug-in hooks to prepare for scaling.

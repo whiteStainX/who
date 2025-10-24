@@ -30,11 +30,14 @@ DspEngine::DspEngine(std::uint32_t sample_rate,
       frame_buffer_(fft_size_, 0.0f),
       band_energies_(bands, 0.0f),
       band_bin_ranges_(bands),
+      prev_magnitudes_(bands, 0.0f),
       fft_cfg_(nullptr),
       fft_in_(fft_size_),
       fft_out_(fft_size_),
       smoothing_attack_(0.35f),
-      smoothing_release_(0.08f) {
+      smoothing_release_(0.08f),
+      flux_average_(0.0f),
+      beat_strength_(0.0f) {
     if (fft_size_ < 2 || (fft_size_ & (fft_size_ - 1)) != 0) {
         throw std::invalid_argument("FFT size must be a power of two greater than 1");
     }
@@ -137,6 +140,7 @@ void DspEngine::process_frame() {
 
     kiss_fft(fft_cfg_, fft_in_.data(), fft_out_.data());
 
+    float flux = 0.0f;
     for (std::size_t band = 0; band < band_bin_ranges_.size(); ++band) {
         const auto [start_bin, end_bin] = band_bin_ranges_[band];
         float energy = 0.0f;
@@ -148,11 +152,25 @@ void DspEngine::process_frame() {
         const std::size_t bin_count = (end_bin > start_bin) ? (end_bin - start_bin) : 1;
         const float average_energy = energy / static_cast<float>(bin_count);
         const float magnitude = std::sqrt(std::max(average_energy, 0.0f));
+        const float previous = (band < prev_magnitudes_.size()) ? prev_magnitudes_[band] : 0.0f;
+        if (band < prev_magnitudes_.size()) {
+            prev_magnitudes_[band] = magnitude;
+        }
+        flux += std::max(0.0f, magnitude - previous);
         const float current = band_energies_[band];
         const float target = magnitude;
         const float alpha = (target > current) ? smoothing_attack_ : smoothing_release_;
         band_energies_[band] = current + (target - current) * alpha;
     }
+
+    flux_average_ = flux_average_ * 0.92f + flux * 0.08f;
+    const float baseline = std::max(flux_average_ * 1.35f, 1e-4f);
+    float beat_instant = 0.0f;
+    if (flux > baseline) {
+        beat_instant = std::min((flux - baseline) / baseline, 1.0f);
+    }
+    beat_strength_ = std::max(beat_instant, beat_strength_ * 0.6f);
+    beat_strength_ = std::clamp(beat_strength_, 0.0f, 1.0f);
 }
 
 } // namespace who
