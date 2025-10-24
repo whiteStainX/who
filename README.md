@@ -30,3 +30,12 @@ After a successful build, run the executable from the repository root:
 ```
 
 Running without flags opens the real-time capture path (requires microphone permissions). Supplying `--file` (or `-f`) streams audio from disk through the same DSP chain. Supported formats depend on miniaudio's decoder (WAV/MP3/FLAC and more). The file path option downmixes to mono, resamples to 48 kHz, and feeds the visualizer at real-time speed so you can test the visualization without capture hardware.
+
+## Controls
+
+Interact with the visualizer while it is running:
+
+- `q`/`Q`: Quit the program immediately.
+- `m`/`M`: Cycle through the visualization modes (Bands → Radial → Trails → …).
+- Arrow keys: Adjust grid rows (Up/Down) and columns (Left/Right) between 8 and 32 cells.
+- `[` / `]`: Decrease or increase audio sensitivity to tune brightness response.

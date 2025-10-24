@@ -83,10 +83,25 @@ std::string format_band_meter(const std::vector<float>& bands) {
 
 } // namespace
 
+const char* mode_name(VisualizationMode mode) {
+    switch (mode) {
+    case VisualizationMode::Bands:
+        return "Bands";
+    case VisualizationMode::Radial:
+        return "Radial";
+    case VisualizationMode::Trails:
+        return "Trails";
+    default:
+        return "Unknown";
+    }
+}
+
 void draw_grid(notcurses* nc,
                int grid_rows,
                int grid_cols,
                float time_s,
+               VisualizationMode mode,
+               float sensitivity,
                const AudioMetrics& metrics,
                const std::vector<float>& bands,
                bool file_stream) {
@@ -126,7 +141,8 @@ void draw_grid(notcurses* nc,
     }
 
     const float reference_energy = std::max(max_band_energy, mean_band_energy * 1.5f);
-    const float gain = reference_energy > 0.0f ? 1.0f / reference_energy : 1.0f;
+    const float user_gain = std::max(0.1f, sensitivity);
+    const float gain = reference_energy > 0.0f ? user_gain / reference_energy : user_gain;
     const float log_denom = std::log1p(9.0f);
 
     auto normalize_energy = [&](float energy) {
@@ -134,13 +150,46 @@ void draw_grid(notcurses* nc,
         return clamp01(log_denom > 0.0f ? scaled / log_denom : 0.0f);
     };
 
+    const float center_row = (grid_rows - 1) / 2.0f;
+    const float center_col = (grid_cols - 1) / 2.0f;
+    const float max_radius = std::max(1.0f, std::sqrt(center_row * center_row + center_col * center_col));
+    constexpr float inv_two_pi = 0.15915494309189535f; // 1 / (2π)
+
     for (int r = 0; r < grid_rows; ++r) {
         for (int c = 0; c < grid_cols; ++c) {
             std::size_t band_index = 0;
+            float band_mix = 0.0f;
             if (band_count > 0) {
-                const float band_t = static_cast<float>(r) / static_cast<float>(grid_rows);
-                band_index = std::min<std::size_t>(band_count - 1,
-                                                    static_cast<std::size_t>(band_t * static_cast<float>(band_count)));
+                switch (mode) {
+                case VisualizationMode::Bands: {
+                    const float band_t = static_cast<float>(r) / static_cast<float>(grid_rows);
+                    band_index = std::min<std::size_t>(band_count - 1,
+                                                        static_cast<std::size_t>(band_t * static_cast<float>(band_count)));
+                    band_mix = static_cast<float>(band_index) / std::max<std::size_t>(1, band_count - 1);
+                    break;
+                }
+                case VisualizationMode::Radial: {
+                    const float dr = static_cast<float>(r) - center_row;
+                    const float dc = static_cast<float>(c) - center_col;
+                    const float radius = std::sqrt(dr * dr + dc * dc);
+                    const float normalized = clamp01(radius / max_radius);
+                    band_index = std::min<std::size_t>(band_count - 1,
+                                                        static_cast<std::size_t>(normalized * static_cast<float>(band_count)));
+                    band_mix = normalized;
+                    break;
+                }
+                case VisualizationMode::Trails: {
+                    const float column_phase = static_cast<float>(c) / std::max(1, grid_cols - 1);
+                    float trail_phase = std::fmod(time_s * 0.35f + column_phase, 1.0f);
+                    if (trail_phase < 0.0f) {
+                        trail_phase += 1.0f;
+                    }
+                    band_index = std::min<std::size_t>(band_count - 1,
+                                                        static_cast<std::size_t>(trail_phase * static_cast<float>(band_count)));
+                    band_mix = trail_phase;
+                    break;
+                }
+                }
             }
 
             const float band_energy = (band_index < band_count) ? bands[band_index] : 0.0f;
@@ -150,9 +199,26 @@ void draw_grid(notcurses* nc,
             const float time_wave = std::sin(time_s * 1.3f + column_phase * 3.0f);
             const float shimmer = std::sin(time_s * 0.9f + r * 0.35f + c * 0.22f);
 
+            float base_hue = column_phase;
+            if (band_count > 0) {
+                switch (mode) {
+                case VisualizationMode::Bands:
+                    base_hue = static_cast<float>(band_index) / static_cast<float>(band_count);
+                    break;
+                case VisualizationMode::Radial: {
+                    const float dr = static_cast<float>(r) - center_row;
+                    const float dc = static_cast<float>(c) - center_col;
+                    const float angle = std::atan2(dr, dc);
+                    base_hue = std::fmod(angle * inv_two_pi + 1.0f, 1.0f);
+                    break;
+                }
+                case VisualizationMode::Trails:
+                    base_hue = band_mix;
+                    break;
+                }
+            }
+
             const float hue_shift = std::fmod(time_s * 0.05f + column_phase * 0.15f, 1.0f);
-            const float base_hue = band_count > 0 ? static_cast<float>(band_index) / static_cast<float>(band_count)
-                                                  : column_phase;
             const float hue = std::fmod(base_hue + hue_shift, 1.0f);
 
             const float brightness = clamp01(0.12f + energy_level * 0.82f + time_wave * 0.12f);
@@ -180,15 +246,24 @@ void draw_grid(notcurses* nc,
     ncplane_set_fg_rgb8(stdplane, 200, 200, 200);
     ncplane_set_bg_default(stdplane);
     ncplane_printf_yx(stdplane, overlay_y, overlay_x,
-                      "Audio %s | RMS: %.3f | Peak: %.3f | Dropped: %zu",
+                      "Audio %s | Mode: %s | Grid: %dx%d | Sens: %.2f",
                       metrics.active ? (file_stream ? "file" : "capturing") : "inactive",
-                      metrics.rms,
-                      metrics.peak,
-                      metrics.dropped);
+                      mode_name(mode),
+                      grid_rows,
+                      grid_cols,
+                      sensitivity);
 
     if (overlay_y + 1 < static_cast<int>(plane_rows)) {
+        ncplane_printf_yx(stdplane, overlay_y + 1, overlay_x,
+                          "RMS: %.3f | Peak: %.3f | Dropped: %zu",
+                          metrics.rms,
+                          metrics.peak,
+                          metrics.dropped);
+    }
+
+    if (overlay_y + 2 < static_cast<int>(plane_rows)) {
         const std::string band_meter = format_band_meter(bands);
-        ncplane_printf_yx(stdplane, overlay_y + 1, overlay_x, "%s", band_meter.c_str());
+        ncplane_printf_yx(stdplane, overlay_y + 2, overlay_x, "%s", band_meter.c_str());
     }
 }
 
