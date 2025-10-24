@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
     constexpr float max_sensitivity = 5.0f;
     constexpr float sensitivity_step = 0.1f;
     who::VisualizationMode mode = who::VisualizationMode::Bands;
+    who::ColorPalette palette = who::ColorPalette::Rainbow;
     constexpr std::chrono::duration<double> frame_time(1.0 / 60.0);
 
     const std::size_t scratch_samples = std::max<std::size_t>(4096, ring_frames * static_cast<std::size_t>(channels));
@@ -95,9 +96,11 @@ int main(int argc, char** argv) {
                        grid_cols,
                        time_s,
                        mode,
+                       palette,
                        sensitivity,
                        audio_metrics,
                        dsp.band_energies(),
+                       dsp.beat_strength(),
                        audio.using_file_stream());
 
         if (notcurses_render(nc) != 0) {
@@ -143,6 +146,17 @@ int main(int argc, char** argv) {
                     break;
                 case who::VisualizationMode::Trails:
                     mode = who::VisualizationMode::Bands;
+                    break;
+                }
+                continue;
+            }
+            if (key == 'p' || key == 'P') {
+                switch (palette) {
+                case who::ColorPalette::Rainbow:
+                    palette = who::ColorPalette::WarmCool;
+                    break;
+                case who::ColorPalette::WarmCool:
+                    palette = who::ColorPalette::Rainbow;
                     break;
                 }
                 continue;
