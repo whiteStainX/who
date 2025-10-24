@@ -56,6 +56,12 @@
 - [x] Added a mode toggle cycling across band stripes, radial bloom, and time-trail visualizations.
 - [x] Introduced adjustable sensitivity to fine-tune brightness response for quiet or loud sources.
 
+## Phase 6 – Optimization & Refinement ✅
+
+- [x] Added a persistent grid cache that only redraws cells whose colors change, slashing terminal writes per frame.
+- [x] Reused precomputed fill buffers and guaranteed a minimum draw height so tight layouts still render crisply.
+- [x] Cleared and repainted overlay lines incrementally to avoid stale text while keeping the main grid diff-based.
+
 ## Next Focus
 
-- Phase 5.5: refine interaction polish and prep renderer diffing optimizations.
+- Phase 7: extensions to add palettes, beat pops, and richer mode behaviors.
