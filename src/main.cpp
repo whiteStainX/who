@@ -415,14 +415,50 @@ void draw_grid(notcurses* nc,
     const int fill_w = std::max(0, cell_w - h_gap);
     const std::string cell_fill(fill_w, ' ');
 
+    const std::size_t band_count = bands.size();
+    float max_band_energy = 0.0f;
+    float mean_band_energy = 0.0f;
+    if (band_count > 0) {
+        for (float energy : bands) {
+            max_band_energy = std::max(max_band_energy, energy);
+            mean_band_energy += energy;
+        }
+        mean_band_energy /= static_cast<float>(band_count);
+    }
+
+    const float reference_energy = std::max(max_band_energy, mean_band_energy * 1.5f);
+    const float gain = reference_energy > 0.0f ? 1.0f / reference_energy : 1.0f;
+    const float log_denom = std::log1p(9.0f);
+
+    auto normalize_energy = [&](float energy) {
+        const float scaled = std::log1p(std::max(energy, 0.0f) * gain * 9.0f);
+        return clamp01(log_denom > 0.0f ? scaled / log_denom : 0.0f);
+    };
+
     for (int r = 0; r < grid_rows; ++r) {
         for (int c = 0; c < grid_cols; ++c) {
-            const float base_hue = static_cast<float>(c) / static_cast<float>(grid_cols);
-            const float wave = std::sin(time_s * 1.5f + r * 0.35f + c * 0.2f);
-            const float shimmer = std::sin(time_s * 0.8f + c * 0.45f);
-            const float brightness = 0.45f + 0.4f * wave;
-            const float saturation = 0.5f + 0.4f * shimmer;
-            const RGB color = hsl_to_rgb(base_hue, saturation, brightness);
+            std::size_t band_index = 0;
+            if (band_count > 0) {
+                const float band_t = static_cast<float>(r) / static_cast<float>(grid_rows);
+                band_index = std::min<std::size_t>(band_count - 1,
+                                                    static_cast<std::size_t>(band_t * static_cast<float>(band_count)));
+            }
+
+            const float band_energy = (band_index < band_count) ? bands[band_index] : 0.0f;
+            const float energy_level = normalize_energy(band_energy);
+
+            const float column_phase = static_cast<float>(c) / std::max(1, grid_cols - 1);
+            const float time_wave = std::sin(time_s * 1.3f + column_phase * 3.0f);
+            const float shimmer = std::sin(time_s * 0.9f + r * 0.35f + c * 0.22f);
+
+            const float hue_shift = std::fmod(time_s * 0.05f + column_phase * 0.15f, 1.0f);
+            const float base_hue = band_count > 0 ? static_cast<float>(band_index) / static_cast<float>(band_count)
+                                                  : column_phase;
+            const float hue = std::fmod(base_hue + hue_shift, 1.0f);
+
+            const float brightness = clamp01(0.12f + energy_level * 0.82f + time_wave * 0.12f);
+            const float saturation = clamp01(0.55f + energy_level * 0.4f + shimmer * 0.05f);
+            const RGB color = hsl_to_rgb(hue, saturation, brightness);
 
             for (int dy = 0; dy < cell_h - v_gap; ++dy) {
                 const int y = offset_y + r * cell_h + dy;
