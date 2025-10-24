@@ -14,6 +14,27 @@ struct Rgb {
     uint8_t b;
 };
 
+struct CellState {
+    Rgb color{0, 0, 0};
+    bool valid{false};
+};
+
+struct GridCache {
+    int rows{0};
+    int cols{0};
+    int cell_h{0};
+    int cell_w{0};
+    int offset_y{0};
+    int offset_x{0};
+    std::vector<CellState> cells;
+    std::string fill;
+};
+
+GridCache& grid_cache() {
+    static GridCache cache;
+    return cache;
+}
+
 float clamp01(float v) {
     return std::max(0.0f, std::min(1.0f, v));
 }
@@ -121,13 +142,33 @@ void draw_grid(notcurses* nc,
     const int offset_y = std::max(0, (static_cast<int>(plane_rows) - grid_height) / 2);
     const int offset_x = std::max(0, (static_cast<int>(plane_cols) - grid_width) / 2);
 
-    ncplane_erase(stdplane);
+    GridCache& cache = grid_cache();
+    const bool geometry_changed = cache.rows != grid_rows || cache.cols != grid_cols || cache.cell_h != cell_h ||
+                                  cache.cell_w != cell_w || cache.offset_y != offset_y || cache.offset_x != offset_x;
+
+    if (geometry_changed) {
+        ncplane_erase(stdplane);
+        cache.rows = grid_rows;
+        cache.cols = grid_cols;
+        cache.cell_h = cell_h;
+        cache.cell_w = cell_w;
+        cache.offset_y = offset_y;
+        cache.offset_x = offset_x;
+        cache.cells.assign(static_cast<std::size_t>(grid_rows * grid_cols), CellState{});
+    } else if (cache.cells.size() != static_cast<std::size_t>(grid_rows * grid_cols)) {
+        cache.cells.assign(static_cast<std::size_t>(grid_rows * grid_cols), CellState{});
+    }
+
     ncplane_set_fg_default(stdplane);
 
     const int v_gap = 1;
     const int h_gap = 2;
-    const int fill_w = std::max(0, cell_w - h_gap);
-    const std::string cell_fill(fill_w, ' ');
+    const int fill_w = std::max(1, cell_w - h_gap);
+    if (static_cast<int>(cache.fill.size()) != fill_w) {
+        cache.fill.assign(static_cast<std::size_t>(fill_w), ' ');
+    }
+    const std::string& cell_fill = cache.fill;
+    const int draw_height = std::max(1, cell_h - v_gap);
 
     const std::size_t band_count = bands.size();
     float max_band_energy = 0.0f;
@@ -154,6 +195,8 @@ void draw_grid(notcurses* nc,
     const float center_col = (grid_cols - 1) / 2.0f;
     const float max_radius = std::max(1.0f, std::sqrt(center_row * center_row + center_col * center_col));
     constexpr float inv_two_pi = 0.15915494309189535f; // 1 / (2π)
+
+    const bool full_refresh = geometry_changed;
 
     for (int r = 0; r < grid_rows; ++r) {
         for (int c = 0; c < grid_cols; ++c) {
@@ -224,8 +267,19 @@ void draw_grid(notcurses* nc,
             const float brightness = clamp01(0.12f + energy_level * 0.82f + time_wave * 0.12f);
             const float saturation = clamp01(0.55f + energy_level * 0.4f + shimmer * 0.05f);
             const Rgb color = hsl_to_rgb(hue, saturation, brightness);
+            const std::size_t cell_index = static_cast<std::size_t>(r * grid_cols + c);
+            bool needs_update = full_refresh;
+            if (!needs_update && cell_index < cache.cells.size()) {
+                const CellState& previous = cache.cells[cell_index];
+                needs_update = !previous.valid || previous.color.r != color.r || previous.color.g != color.g ||
+                               previous.color.b != color.b;
+            }
 
-            for (int dy = 0; dy < cell_h - v_gap; ++dy) {
+            if (!needs_update) {
+                continue;
+            }
+
+            for (int dy = 0; dy < draw_height; ++dy) {
                 const int y = offset_y + r * cell_h + dy;
                 if (y >= static_cast<int>(plane_rows)) {
                     continue;
@@ -238,11 +292,30 @@ void draw_grid(notcurses* nc,
                 ncplane_set_bg_rgb8(stdplane, color.r, color.g, color.b);
                 ncplane_putstr_yx(stdplane, y, x, cell_fill.c_str());
             }
+
+            if (cell_index < cache.cells.size()) {
+                cache.cells[cell_index].color = color;
+                cache.cells[cell_index].valid = true;
+            }
         }
     }
 
     const int overlay_y = std::min(static_cast<int>(plane_rows) - 1, offset_y + grid_height);
     const int overlay_x = offset_x;
+    auto clear_overlay_line = [&](int y) {
+        if (y >= static_cast<int>(plane_rows)) {
+            return;
+        }
+        const int width = std::max(0, static_cast<int>(plane_cols) - overlay_x);
+        if (width <= 0) {
+            return;
+        }
+        ncplane_set_fg_default(stdplane);
+        ncplane_set_bg_default(stdplane);
+        ncplane_printf_yx(stdplane, y, overlay_x, "%*s", width, "");
+    };
+
+    clear_overlay_line(overlay_y);
     ncplane_set_fg_rgb8(stdplane, 200, 200, 200);
     ncplane_set_bg_default(stdplane);
     ncplane_printf_yx(stdplane, overlay_y, overlay_x,
@@ -254,6 +327,9 @@ void draw_grid(notcurses* nc,
                       sensitivity);
 
     if (overlay_y + 1 < static_cast<int>(plane_rows)) {
+        clear_overlay_line(overlay_y + 1);
+        ncplane_set_fg_rgb8(stdplane, 200, 200, 200);
+        ncplane_set_bg_default(stdplane);
         ncplane_printf_yx(stdplane, overlay_y + 1, overlay_x,
                           "RMS: %.3f | Peak: %.3f | Dropped: %zu",
                           metrics.rms,
@@ -262,6 +338,9 @@ void draw_grid(notcurses* nc,
     }
 
     if (overlay_y + 2 < static_cast<int>(plane_rows)) {
+        clear_overlay_line(overlay_y + 2);
+        ncplane_set_fg_rgb8(stdplane, 200, 200, 200);
+        ncplane_set_bg_default(stdplane);
         const std::string band_meter = format_band_meter(bands);
         ncplane_printf_yx(stdplane, overlay_y + 2, overlay_x, "%s", band_meter.c_str());
     }
