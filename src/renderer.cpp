@@ -1,0 +1,196 @@
+#include "renderer.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <string>
+
+namespace who {
+namespace {
+
+struct Rgb {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+};
+
+float clamp01(float v) {
+    return std::max(0.0f, std::min(1.0f, v));
+}
+
+float hue_to_rgb(float p, float q, float t) {
+    if (t < 0.0f) {
+        t += 1.0f;
+    }
+    if (t > 1.0f) {
+        t -= 1.0f;
+    }
+    if (t < 1.0f / 6.0f) {
+        return p + (q - p) * 6.0f * t;
+    }
+    if (t < 1.0f / 2.0f) {
+        return q;
+    }
+    if (t < 2.0f / 3.0f) {
+        return p + (q - p) * (2.0f / 3.0f - t) * 6.0f;
+    }
+    return p;
+}
+
+Rgb hsl_to_rgb(float h, float s, float l) {
+    h = std::fmod(h, 1.0f);
+    if (h < 0.0f) {
+        h += 1.0f;
+    }
+    s = clamp01(s);
+    l = clamp01(l);
+
+    float r;
+    float g;
+    float b;
+
+    if (s == 0.0f) {
+        r = g = b = l;
+    } else {
+        const float q = l < 0.5f ? l * (1.0f + s) : l + s - l * s;
+        const float p = 2.0f * l - q;
+        r = hue_to_rgb(p, q, h + 1.0f / 3.0f);
+        g = hue_to_rgb(p, q, h);
+        b = hue_to_rgb(p, q, h - 1.0f / 3.0f);
+    }
+
+    return Rgb{static_cast<uint8_t>(std::round(r * 255.0f)),
+               static_cast<uint8_t>(std::round(g * 255.0f)),
+               static_cast<uint8_t>(std::round(b * 255.0f))};
+}
+
+std::string format_band_meter(const std::vector<float>& bands) {
+    static const std::string glyphs = " .:-=+*#%@";
+    if (bands.empty()) {
+        return "Bands (unavailable)";
+    }
+
+    std::string line = "Bands ";
+    for (float energy : bands) {
+        const float scaled = std::log10(1.0f + std::max(energy, 0.0f) * 9.0f) / std::log10(10.0f);
+        const float normalized = clamp01(scaled);
+        const float position = normalized * static_cast<float>(glyphs.size() - 1);
+        const int idx = static_cast<int>(std::round(position));
+        line.push_back(glyphs[idx]);
+    }
+    return line;
+}
+
+} // namespace
+
+void draw_grid(notcurses* nc,
+               int grid_rows,
+               int grid_cols,
+               float time_s,
+               const AudioMetrics& metrics,
+               const std::vector<float>& bands,
+               bool file_stream) {
+    ncplane* stdplane = notcurses_stdplane(nc);
+    unsigned int plane_rows = 0;
+    unsigned int plane_cols = 0;
+    ncplane_dim_yx(stdplane, &plane_rows, &plane_cols);
+
+    const int cell_h_from_rows = static_cast<int>(plane_rows) / grid_rows;
+    const int cell_h_from_cols = static_cast<int>(plane_cols) / (grid_cols * 2);
+    const int cell_h = std::max(1, std::min(cell_h_from_rows, cell_h_from_cols));
+    const int cell_w = cell_h * 2;
+
+    const int grid_height = cell_h * grid_rows;
+    const int grid_width = cell_w * grid_cols;
+
+    const int offset_y = std::max(0, (static_cast<int>(plane_rows) - grid_height) / 2);
+    const int offset_x = std::max(0, (static_cast<int>(plane_cols) - grid_width) / 2);
+
+    ncplane_erase(stdplane);
+    ncplane_set_fg_default(stdplane);
+
+    const int v_gap = 1;
+    const int h_gap = 2;
+    const int fill_w = std::max(0, cell_w - h_gap);
+    const std::string cell_fill(fill_w, ' ');
+
+    const std::size_t band_count = bands.size();
+    float max_band_energy = 0.0f;
+    float mean_band_energy = 0.0f;
+    if (band_count > 0) {
+        for (float energy : bands) {
+            max_band_energy = std::max(max_band_energy, energy);
+            mean_band_energy += energy;
+        }
+        mean_band_energy /= static_cast<float>(band_count);
+    }
+
+    const float reference_energy = std::max(max_band_energy, mean_band_energy * 1.5f);
+    const float gain = reference_energy > 0.0f ? 1.0f / reference_energy : 1.0f;
+    const float log_denom = std::log1p(9.0f);
+
+    auto normalize_energy = [&](float energy) {
+        const float scaled = std::log1p(std::max(energy, 0.0f) * gain * 9.0f);
+        return clamp01(log_denom > 0.0f ? scaled / log_denom : 0.0f);
+    };
+
+    for (int r = 0; r < grid_rows; ++r) {
+        for (int c = 0; c < grid_cols; ++c) {
+            std::size_t band_index = 0;
+            if (band_count > 0) {
+                const float band_t = static_cast<float>(r) / static_cast<float>(grid_rows);
+                band_index = std::min<std::size_t>(band_count - 1,
+                                                    static_cast<std::size_t>(band_t * static_cast<float>(band_count)));
+            }
+
+            const float band_energy = (band_index < band_count) ? bands[band_index] : 0.0f;
+            const float energy_level = normalize_energy(band_energy);
+
+            const float column_phase = static_cast<float>(c) / std::max(1, grid_cols - 1);
+            const float time_wave = std::sin(time_s * 1.3f + column_phase * 3.0f);
+            const float shimmer = std::sin(time_s * 0.9f + r * 0.35f + c * 0.22f);
+
+            const float hue_shift = std::fmod(time_s * 0.05f + column_phase * 0.15f, 1.0f);
+            const float base_hue = band_count > 0 ? static_cast<float>(band_index) / static_cast<float>(band_count)
+                                                  : column_phase;
+            const float hue = std::fmod(base_hue + hue_shift, 1.0f);
+
+            const float brightness = clamp01(0.12f + energy_level * 0.82f + time_wave * 0.12f);
+            const float saturation = clamp01(0.55f + energy_level * 0.4f + shimmer * 0.05f);
+            const Rgb color = hsl_to_rgb(hue, saturation, brightness);
+
+            for (int dy = 0; dy < cell_h - v_gap; ++dy) {
+                const int y = offset_y + r * cell_h + dy;
+                if (y >= static_cast<int>(plane_rows)) {
+                    continue;
+                }
+                const int x = offset_x + c * cell_w;
+                if (x >= static_cast<int>(plane_cols)) {
+                    continue;
+                }
+
+                ncplane_set_bg_rgb8(stdplane, color.r, color.g, color.b);
+                ncplane_putstr_yx(stdplane, y, x, cell_fill.c_str());
+            }
+        }
+    }
+
+    const int overlay_y = std::min(static_cast<int>(plane_rows) - 1, offset_y + grid_height);
+    const int overlay_x = offset_x;
+    ncplane_set_fg_rgb8(stdplane, 200, 200, 200);
+    ncplane_set_bg_default(stdplane);
+    ncplane_printf_yx(stdplane, overlay_y, overlay_x,
+                      "Audio %s | RMS: %.3f | Peak: %.3f | Dropped: %zu",
+                      metrics.active ? (file_stream ? "file" : "capturing") : "inactive",
+                      metrics.rms,
+                      metrics.peak,
+                      metrics.dropped);
+
+    if (overlay_y + 1 < static_cast<int>(plane_rows)) {
+        const std::string band_meter = format_band_meter(bands);
+        ncplane_printf_yx(stdplane, overlay_y + 1, overlay_x, "%s", band_meter.c_str());
+    }
+}
+
+} // namespace who
+

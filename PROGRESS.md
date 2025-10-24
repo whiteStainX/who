@@ -44,6 +44,12 @@
 - [x] Applied adaptive gain control and logarithmic scaling to keep brightness responsive across input levels.
 - [x] Blended temporal waves with per-band saturation for fluid, audio-driven color motion.
 
+## Phase 4.5 – Loop Modularization ✅
+
+- [x] Extracted audio capture/stream control into `AudioEngine` so input handling is isolated from the main loop.
+- [x] Moved rendering math into a dedicated `renderer` module for cleaner visual logic ownership.
+- [x] Slimmed `main.cpp` to configuration and orchestration responsibilities to keep future phases maintainable.
+
 ## Next Focus
 
 - Phase 5: add runtime controls and visualization mode toggles.
