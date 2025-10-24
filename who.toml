@@ -1,0 +1,65 @@
+# who configuration manifest
+# Phase 8 introduces a comprehensive runtime configuration surface for audio, DSP, visuals, and plug-ins.
+
+[log]
+level = "info"
+
+[audio.capture]
+enabled = true
+sample_rate = 48000
+channels = 2
+ring_frames = 8192
+# Set to the miniaudio device name to lock capture to a specific input.
+device = ""
+# Optional software gain applied before DSP; keep at 1.0 for unity.
+input_gain = 1.0
+
+[audio.file]
+enabled = true
+# Provide a default file path to autoload in environments without capture.
+path = ""
+channels = 1
+# File input gain mirrors capture gain for quick balancing.
+gain = 1.0
+
+[audio]
+# When true the visualizer will prefer the file path above unless overridden via --file.
+prefer_file = false
+
+[dsp]
+fft_size = 1024
+hop_size = 256
+bands = 32
+window = "hann"
+smoothing_attack = 0.22
+smoothing_release = 0.05
+beat_sensitivity = 0.8
+enable_flux = true
+
+[visual.grid]
+rows = 16
+cols = 16
+min = 8
+max = 32
+
+[visual.sensitivity]
+value = 1.0
+min = 0.2
+max = 5.0
+step = 0.1
+
+[visual]
+mode = "bands"
+palette = "rainbow"
+target_fps = 60.0
+
+[runtime]
+show_metrics = true
+allow_resize = true
+beat_flash = true
+
+[plugins]
+directory = "plugins"
+autoload = ["beat-flash-debug"]
+# Beat diagnostics append to plugins/beat-flash-debug.log when this plug-in is enabled.
+safe_mode = false

@@ -9,32 +9,76 @@
 #include <vector>
 
 #include "audio_engine.h"
+#include "config.h"
 #include "dsp.h"
+#include "plugins.h"
 #include "renderer.h"
 
 int main(int argc, char** argv) {
     std::setlocale(LC_ALL, "");
 
+    std::string config_path = "who.toml";
     std::string file_path;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
+        if ((arg == "--config" || arg == "-c") && i + 1 < argc) {
+            config_path = argv[i + 1];
+            ++i;
+            continue;
+        }
         if ((arg == "--file" || arg == "-f") && i + 1 < argc) {
             file_path = argv[i + 1];
             ++i;
+            continue;
         }
     }
 
-    constexpr ma_uint32 sample_rate = 48000;
-    const bool use_file_stream = !file_path.empty();
-    const ma_uint32 channels = use_file_stream ? 1 : 2;
-    constexpr std::size_t ring_frames = 8192;
-    who::AudioEngine audio(sample_rate, channels, ring_frames, file_path);
-    const bool audio_active = audio.start();
+    const who::ConfigLoadResult config_result = who::load_app_config(config_path);
+    const who::AppConfig& config = config_result.config;
+    if (!config_result.loaded_file) {
+        std::clog << "[config] using built-in defaults (missing '" << config_path << "')" << std::endl;
+    } else {
+        std::clog << "[config] loaded '" << config_path << "'" << std::endl;
+    }
+    for (const std::string& warning : config_result.warnings) {
+        std::cerr << "[config] " << warning << std::endl;
+    }
 
-    constexpr std::size_t fft_size = 1024;
-    constexpr std::size_t hop_size = fft_size / 4;
-    constexpr std::size_t bands = 32;
-    who::DspEngine dsp(sample_rate, channels, fft_size, hop_size, bands);
+    if (file_path.empty() && config.audio.prefer_file && config.audio.file.enabled && !config.audio.file.path.empty()) {
+        file_path = config.audio.file.path;
+    }
+
+    const bool use_file_stream = config.audio.file.enabled && !file_path.empty();
+    const ma_uint32 sample_rate = config.audio.capture.sample_rate;
+    ma_uint32 channels = use_file_stream ? config.audio.file.channels : config.audio.capture.channels;
+    if (channels == 0) {
+        channels = 1;
+    }
+    const std::size_t ring_frames = std::max<std::size_t>(1024, config.audio.capture.ring_frames);
+
+    who::AudioEngine audio(sample_rate, channels, ring_frames, use_file_stream ? file_path : std::string{});
+    bool audio_active = false;
+    if (use_file_stream || config.audio.capture.enabled) {
+        audio_active = audio.start();
+        if (!audio_active) {
+            std::cerr << "[audio] failed to start audio backend" << std::endl;
+        }
+    } else {
+        std::clog << "[audio] capture disabled; running without live audio" << std::endl;
+    }
+
+    who::DspEngine dsp(sample_rate,
+                       channels,
+                       config.dsp.fft_size,
+                       config.dsp.hop_size,
+                       config.dsp.bands);
+
+    who::PluginManager plugin_manager;
+    who::register_builtin_plugins(plugin_manager);
+    plugin_manager.load_from_config(config);
+    for (const std::string& warning : plugin_manager.warnings()) {
+        std::cerr << "[plugin] " << warning << std::endl;
+    }
 
     notcurses_options opts{};
     opts.flags = NCOPTION_SUPPRESS_BANNERS;
@@ -45,17 +89,17 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    int grid_rows = 16;
-    int grid_cols = 16;
-    constexpr int min_grid_dim = 8;
-    constexpr int max_grid_dim = 32;
-    float sensitivity = 1.0f;
-    constexpr float min_sensitivity = 0.2f;
-    constexpr float max_sensitivity = 5.0f;
-    constexpr float sensitivity_step = 0.1f;
-    who::VisualizationMode mode = who::VisualizationMode::Bands;
-    who::ColorPalette palette = who::ColorPalette::Rainbow;
-    constexpr std::chrono::duration<double> frame_time(1.0 / 60.0);
+    int grid_rows = config.visual.grid.rows;
+    int grid_cols = config.visual.grid.cols;
+    const int min_grid_dim = config.visual.grid.min_dim;
+    const int max_grid_dim = config.visual.grid.max_dim;
+    float sensitivity = config.visual.sensitivity.value;
+    const float min_sensitivity = config.visual.sensitivity.min_value;
+    const float max_sensitivity = config.visual.sensitivity.max_value;
+    const float sensitivity_step = config.visual.sensitivity.step;
+    who::VisualizationMode mode = config.visual.default_mode;
+    who::ColorPalette palette = config.visual.default_palette;
+    const std::chrono::duration<double> frame_time(1.0 / config.visual.target_fps);
 
     const std::size_t scratch_samples = std::max<std::size_t>(4096, ring_frames * static_cast<std::size_t>(channels));
     std::vector<float> audio_scratch(scratch_samples);
@@ -91,6 +135,8 @@ int main(int argc, char** argv) {
             audio_metrics.dropped = audio.dropped_samples();
         }
 
+        plugin_manager.notify_frame(audio_metrics, dsp.band_energies(), dsp.beat_strength(), time_s);
+
         who::draw_grid(nc,
                        grid_rows,
                        grid_cols,
@@ -101,7 +147,8 @@ int main(int argc, char** argv) {
                        audio_metrics,
                        dsp.band_energies(),
                        dsp.beat_strength(),
-                       audio.using_file_stream());
+                       audio.using_file_stream(),
+                       config.runtime.show_metrics);
 
         if (notcurses_render(nc) != 0) {
             std::cerr << "Failed to render frame" << std::endl;
@@ -120,19 +167,19 @@ int main(int argc, char** argv) {
                 running = false;
                 break;
             }
-            if (key == NCKEY_UP) {
+            if (config.runtime.allow_resize && key == NCKEY_UP) {
                 grid_rows = std::min(grid_rows + 1, max_grid_dim);
                 continue;
             }
-            if (key == NCKEY_DOWN) {
+            if (config.runtime.allow_resize && key == NCKEY_DOWN) {
                 grid_rows = std::max(grid_rows - 1, min_grid_dim);
                 continue;
             }
-            if (key == NCKEY_RIGHT) {
+            if (config.runtime.allow_resize && key == NCKEY_RIGHT) {
                 grid_cols = std::min(grid_cols + 1, max_grid_dim);
                 continue;
             }
-            if (key == NCKEY_LEFT) {
+            if (config.runtime.allow_resize && key == NCKEY_LEFT) {
                 grid_cols = std::max(grid_cols - 1, min_grid_dim);
                 continue;
             }

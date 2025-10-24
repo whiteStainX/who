@@ -26,10 +26,10 @@ cmake --build build
 After a successful build, run the executable from the repository root:
 
 ```bash
-./build/who [--file path/to/audio.wav]
+./build/who [--config path/to/who.toml] [--file path/to/audio.wav]
 ```
 
-Running without flags opens the real-time capture path (requires microphone permissions). Supplying `--file` (or `-f`) streams audio from disk through the same DSP chain. Supported formats depend on miniaudio's decoder (WAV/MP3/FLAC and more). The file path option downmixes to mono, resamples to 48 kHz, and feeds the visualizer at real-time speed so you can test the visualization without capture hardware.
+Running without flags opens the real-time capture path (requires microphone permissions). Supplying `--file` (or `-f`) streams audio from disk through the same DSP chain. Supported formats depend on miniaudio's decoder (WAV/MP3/FLAC and more). The file path option downmixes to mono, resamples to 48 kHz, and feeds the visualizer at real-time speed so you can test the visualization without capture hardware. Use `--config` (or `-c`) to load an alternate TOML configuration.
 
 ## Controls
 
@@ -39,3 +39,15 @@ Interact with the visualizer while it is running:
 - `m`/`M`: Cycle through the visualization modes (Bands → Radial → Trails → …).
 - Arrow keys: Adjust grid rows (Up/Down) and columns (Left/Right) between 8 and 32 cells.
 - `[` / `]`: Decrease or increase audio sensitivity to tune brightness response.
+
+## Configuration & Plug-ins
+
+Phase 8 introduces a comprehensive `who.toml` manifest checked at startup (the repository ships with a ready-to-edit version in the project root). The configuration controls:
+
+- **Audio**: capture enablement, sample rate, channels, ring buffer sizing, optional default file playback, and gain staging.
+- **DSP**: FFT size, hop size, band aggregation, window selection, smoothing constants, and beat detector sensitivity.
+- **Visuals**: default grid geometry, sensitivity limits, palette/mode defaults, and target frame rate.
+- **Runtime**: toggles for on-screen metrics, grid resizing, and beat-driven flashes.
+- **Plug-ins**: autoloaded module IDs and the discovery directory for future dynamic modules.
+
+Override settings per environment by passing `--config /path/to/override.toml`. Unknown keys are ignored with a warning, and malformed values fall back to the built-in defaults. The bundled `beat-flash-debug` plug-in is active by default and appends beat-detection diagnostics to `plugins/beat-flash-debug.log` (or `./beat-flash-debug.log` if the directory cannot be created); disable it by removing it from `plugins.autoload` or setting `runtime.beat_flash = false`.
