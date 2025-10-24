@@ -3,24 +3,28 @@ project(who LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find notcurses
-find_package(Notcurses REQUIRED)
 
-# Add our source files
-add_executable(who src/main.cpp)
+# --- notcurses via pkg-config ---
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(NOTCURSES QUIET IMPORTED_TARGET notcurses)
+if (NOT NOTCURSES_FOUND)
+  pkg_check_modules(NOTCURSES REQUIRED IMPORTED_TARGET notcurses-core)
+endif()
 
-# Include kissfft sources
-target_sources(who PRIVATE
-    external/kissfft/kiss_fft.c
+# --- sources ---
+add_executable(who
+  src/main.cpp
+  external/kissfft/kiss_fft.c
 )
 
-# Include directories
+# --- includes ---
 target_include_directories(who PRIVATE
-    src
-    external/miniaudio
-    external/kissfft
+  src
+  external/miniaudio
+  external/kissfft
 )
 
-# Link libraries
-target_link_libraries(who PRIVATE Notcurses::notcurses)
+# --- link notcurses (and its transitive deps) ---
+target_link_libraries(who PRIVATE PkgConfig::NOTCURSES)
