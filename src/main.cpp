@@ -68,17 +68,17 @@ RGB hsl_to_rgb(float h, float s, float l) {
 
 void draw_grid(notcurses* nc, int grid_rows, int grid_cols, float time_s) {
     ncplane* stdplane = notcurses_stdplane(nc);
-    int plane_rows = 0;
-    int plane_cols = 0;
+    unsigned int plane_rows = 0;
+    unsigned int plane_cols = 0;
     ncplane_dim_yx(stdplane, &plane_rows, &plane_cols);
 
-    const int cell_h = std::max(1, plane_rows / grid_rows);
-    const int cell_w = std::max(2, plane_cols / grid_cols);
+    const int cell_h = std::max(1, (int)plane_rows / grid_rows);
+    const int cell_w = std::max(2, (int)plane_cols / grid_cols);
     const int grid_height = cell_h * grid_rows;
     const int grid_width = cell_w * grid_cols;
 
-    const int offset_y = std::max(0, (plane_rows - grid_height) / 2);
-    const int offset_x = std::max(0, (plane_cols - grid_width) / 2);
+    const int offset_y = std::max(0, ((int)plane_rows - grid_height) / 2);
+    const int offset_x = std::max(0, ((int)plane_cols - grid_width) / 2);
 
     ncplane_erase(stdplane);
     ncplane_set_fg_default(stdplane);
@@ -146,7 +146,7 @@ int main() {
         ncinput input{};
         const timespec ts{0, 0};
         uint32_t key = 0;
-        while ((key = notcurses_getc(nc, &ts, &input)) != 0) {
+        while ((key = notcurses_get(nc, &ts, &input)) != 0) {
             if (key == (uint32_t)-1) {
                 running = false;
                 break;
