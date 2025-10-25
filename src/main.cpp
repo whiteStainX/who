@@ -148,7 +148,8 @@ int main(int argc, char** argv) {
                        dsp.band_energies(),
                        dsp.beat_strength(),
                        audio.using_file_stream(),
-                       config.runtime.show_metrics);
+                       config.runtime.show_metrics,
+                       config.runtime.show_overlay_metrics);
 
         if (notcurses_render(nc) != 0) {
             std::cerr << "Failed to render frame" << std::endl;
