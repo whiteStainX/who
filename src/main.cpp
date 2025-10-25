@@ -192,6 +192,9 @@ int main(int argc, char** argv) {
                     mode = who::VisualizationMode::Trails;
                     break;
                 case who::VisualizationMode::Trails:
+                    mode = who::VisualizationMode::Digital;
+                    break;
+                case who::VisualizationMode::Digital:
                     mode = who::VisualizationMode::Bands;
                     break;
                 }
@@ -203,6 +206,15 @@ int main(int argc, char** argv) {
                     palette = who::ColorPalette::WarmCool;
                     break;
                 case who::ColorPalette::WarmCool:
+                    palette = who::ColorPalette::DigitalAmber;
+                    break;
+                case who::ColorPalette::DigitalAmber:
+                    palette = who::ColorPalette::DigitalCyan;
+                    break;
+                case who::ColorPalette::DigitalCyan:
+                    palette = who::ColorPalette::DigitalViolet;
+                    break;
+                case who::ColorPalette::DigitalViolet:
                     palette = who::ColorPalette::Rainbow;
                     break;
                 }

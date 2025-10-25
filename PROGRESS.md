@@ -76,6 +76,12 @@
 - [x] Exposed configuration-driven toggles for overlays, grid controls, sensitivities, and future expansion.
 - [x] Routed beat diagnostics into a log file so debug output no longer interferes with the terminal renderer.
 
+## Phase 9 – Digital Specialisation ✅
+
+- [x] Added a monochrome Digital Pulse mode with quantised brightness for a clean, beat-forward LED aesthetic.
+- [x] Introduced three single-colour designs (Digital Amber, Digital Cyan, Digital Violet) with discrete movement accents.
+- [x] Set the default `who.toml` to the Digital Amber design and documented runtime/persistent selection flows.
+
 ## Backlog
 
 - [ ] Cross-platform packaging, CI, and distribution improvements.
