@@ -284,6 +284,7 @@ void draw_grid(notcurses* nc,
                 int quantization_levels = 6;
                 float design_multiplier = 1.0f;
                 float beat_floor = 0.0f;
+                float beat_color_shift = 0.0f; // New: for subtle color shifts on beat
 
                 switch (palette) {
                 case ColorPalette::DigitalAmber:
@@ -291,6 +292,7 @@ void draw_grid(notcurses* nc,
                     quantization_levels = 5;
                     if (beat_strength > 0.6f) {
                         beat_floor = 0.85f;
+                        beat_color_shift = 0.1f; // Shift towards yellow/white
                     }
                     break;
                 case ColorPalette::DigitalCyan: {
@@ -308,9 +310,9 @@ void draw_grid(notcurses* nc,
                         }
                         const int distance = std::abs(c - scan_col);
                         if (distance == 0) {
-                            design_multiplier = 1.35f;
+                            design_multiplier = 1.35f + beat_strength * 0.5f; // Brighter on beat
                         } else if (distance == 1) {
-                            design_multiplier = 1.1f;
+                            design_multiplier = 1.1f + beat_strength * 0.2f;
                         } else {
                             design_multiplier = 0.85f;
                         }
@@ -322,7 +324,7 @@ void draw_grid(notcurses* nc,
                     quantization_levels = 7;
                     const int toggle = static_cast<int>(time_s * 8.0f) % 2;
                     const int parity = (r + c + toggle) % 2;
-                    design_multiplier = (parity == 0) ? 1.2f : 0.6f;
+                    design_multiplier = (parity == 0) ? (1.2f + beat_strength * 0.3f) : (0.6f + beat_strength * 0.1f); // Pulse with beat
                     break;
                 }
                 default:
@@ -333,22 +335,30 @@ void draw_grid(notcurses* nc,
                 const float base_g = static_cast<float>(base_color.g) / 255.0f;
                 const float base_b = static_cast<float>(base_color.b) / 255.0f;
 
-                const float beat_gain = 1.0f + clamp01(beat_strength) * 0.6f;
-                float intensity = clamp01(energy_level * beat_gain * design_multiplier);
+                // More aggressive beat reaction and non-linear energy mapping
+                const float beat_multiplier = 1.0f + clamp01(beat_strength) * 1.2f; // Increased multiplier
+                float intensity = std::pow(energy_level, 1.5f) * beat_multiplier * design_multiplier; // Non-linear energy
+
                 if (beat_floor > 0.0f) {
                     intensity = std::max(intensity, beat_floor);
                 }
-                if (quantization_levels > 1) {
-                    intensity = std::round(intensity * static_cast<float>(quantization_levels)) /
-                                static_cast<float>(quantization_levels);
+
+                // Dynamic quantization
+                int current_quantization_levels = quantization_levels;
+                if (beat_strength > 0.5f) {
+                    current_quantization_levels = std::max(2, quantization_levels - 2); // Fewer levels on strong beats
+                }
+                if (current_quantization_levels > 1) {
+                    intensity = std::round(intensity * static_cast<float>(current_quantization_levels)) /
+                                static_cast<float>(current_quantization_levels);
                 }
                 if (intensity < 0.05f) {
                     intensity = 0.0f;
                 }
 
-                target_r = clamp01(base_r * intensity);
-                target_g = clamp01(base_g * intensity);
-                target_b = clamp01(base_b * intensity);
+                target_r = clamp01(base_r * intensity + beat_color_shift);
+                target_g = clamp01(base_g * intensity + beat_color_shift);
+                target_b = clamp01(base_b * intensity + beat_color_shift);
             } else {
                 float base_hue = column_ratio;
                 if (band_count > 0) {
@@ -366,7 +376,7 @@ void draw_grid(notcurses* nc,
                     case VisualizationMode::Trails:
                         base_hue = band_mix;
                         break;
-                    case VisualizationMode::Digital:
+                    case VisualizationMode::Digital: // Should not be reached due to use_digital check
                         base_hue = static_cast<float>(band_index) / std::max<std::size_t>(1, band_count);
                         break;
                     }
@@ -405,10 +415,12 @@ void draw_grid(notcurses* nc,
                 state.smooth_g = target_g;
                 state.smooth_b = target_b;
             } else {
-                const float smoothing = use_digital ? 0.55f : 0.22f;
-                state.smooth_r += (target_r - state.smooth_r) * smoothing;
-                state.smooth_g += (target_g - state.smooth_g) * smoothing;
-                state.smooth_b += (target_b - state.smooth_b) * smoothing;
+                // Adjust smoothing based on beat_strength for more reactivity
+                const float base_smoothing = use_digital ? 0.55f : 0.22f;
+                const float dynamic_smoothing = base_smoothing + beat_strength * 0.3f; // More reactive on beat
+                state.smooth_r += (target_r - state.smooth_r) * dynamic_smoothing;
+                state.smooth_g += (target_g - state.smooth_g) * dynamic_smoothing;
+                state.smooth_b += (target_b - state.smooth_b) * dynamic_smoothing;
             }
 
             const Rgb color{static_cast<uint8_t>(std::round(clamp01(state.smooth_r) * 255.0f)),
