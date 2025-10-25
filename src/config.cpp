@@ -480,6 +480,9 @@ VisualizationMode visualization_mode_from_string(const std::string& value, Visua
     if (lower == "trails") {
         return VisualizationMode::Trails;
     }
+    if (lower == "digital" || lower == "digital_pulse" || lower == "digital-pulse") {
+        return VisualizationMode::Digital;
+    }
     return fallback;
 }
 
@@ -491,6 +494,15 @@ ColorPalette color_palette_from_string(const std::string& value, ColorPalette fa
     }
     if (lower == "warmcool" || lower == "warm_cool" || lower == "warm-cool") {
         return ColorPalette::WarmCool;
+    }
+    if (lower == "digitalamber" || lower == "digital-amber" || lower == "digital_amber") {
+        return ColorPalette::DigitalAmber;
+    }
+    if (lower == "digitalcyan" || lower == "digital-cyan" || lower == "digital_cyan") {
+        return ColorPalette::DigitalCyan;
+    }
+    if (lower == "digitalviolet" || lower == "digital-violet" || lower == "digital_violet") {
+        return ColorPalette::DigitalViolet;
     }
     return fallback;
 }

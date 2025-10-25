@@ -36,7 +36,8 @@ Running without flags opens the real-time capture path (requires microphone perm
 Interact with the visualizer while it is running:
 
 - `q`/`Q`: Quit the program immediately.
-- `m`/`M`: Cycle through the visualization modes (Bands → Radial → Trails → …).
+- `m`/`M`: Cycle through the visualization modes (Bands → Radial → Trails → Digital Pulse → …).
+- `p`/`P`: Cycle through the color designs (Rainbow → Warm/Cool → Digital Amber → Digital Cyan → Digital Violet → …).
 - Arrow keys: Adjust grid rows (Up/Down) and columns (Left/Right) between 8 and 32 cells.
 - `[` / `]`: Decrease or increase audio sensitivity to tune brightness response.
 
@@ -51,3 +52,16 @@ Phase 8 introduces a comprehensive `who.toml` manifest checked at startup (the r
 - **Plug-ins**: autoloaded module IDs and the discovery directory for future dynamic modules.
 
 Override settings per environment by passing `--config /path/to/override.toml`. Unknown keys are ignored with a warning, and malformed values fall back to the built-in defaults. The bundled `beat-flash-debug` plug-in is active by default and appends beat-detection diagnostics to `plugins/beat-flash-debug.log` (or `./beat-flash-debug.log` if the directory cannot be created); disable it by removing it from `plugins.autoload` or setting `runtime.beat_flash = false`.
+
+### Phase 9 – Digital Specialisation
+
+Phase 9 introduces a monochrome "Digital Pulse" mode designed for electronic music with emphatic beats. The renderer focuses on
+a single colour per design and encodes energy solely as brightness, producing a crisp, LED-like grid with no sinusoidal waves or
+rainbow gradients. The bundled `who.toml` now defaults to this mode with the **Digital Amber** design; set `visual.mode = "digital"`
+and adjust `visual.palette` to pin any of the variants:
+
+- **Digital Amber** – A warm amber glow that snaps to high intensity whenever the beat detector fires, evoking classic VU tubes.
+- **Digital Cyan** – An icy cyan sweep with a discrete column scanner accent for a synth-lab aesthetic.
+- **Digital Violet** – A saturated violet lattice that alternates in a checker cadence for a punchy, club-ready pulse.
+
+Switch designs at runtime with the `p` key or edit the `who.toml` values above to set a persistent default.

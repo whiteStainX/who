@@ -115,6 +115,8 @@ const char* mode_name(VisualizationMode mode) {
         return "Radial";
     case VisualizationMode::Trails:
         return "Trails";
+    case VisualizationMode::Digital:
+        return "Digital Pulse";
     default:
         return "Unknown";
     }
@@ -126,6 +128,12 @@ const char* palette_name(ColorPalette palette) {
         return "Rainbow";
     case ColorPalette::WarmCool:
         return "Warm/Cool";
+    case ColorPalette::DigitalAmber:
+        return "Digital Amber";
+    case ColorPalette::DigitalCyan:
+        return "Digital Cyan";
+    case ColorPalette::DigitalViolet:
+        return "Digital Violet";
     default:
         return "Unknown";
     }
@@ -215,6 +223,11 @@ void draw_grid(notcurses* nc,
 
     const bool full_refresh = geometry_changed;
 
+    const bool digital_mode = mode == VisualizationMode::Digital;
+    const bool digital_palette = palette == ColorPalette::DigitalAmber || palette == ColorPalette::DigitalCyan ||
+                                 palette == ColorPalette::DigitalViolet;
+    const bool use_digital = digital_mode || digital_palette;
+
     const float beat_flash = clamp01(beat_strength);
 
     for (int r = 0; r < grid_rows; ++r) {
@@ -223,7 +236,8 @@ void draw_grid(notcurses* nc,
             float band_mix = 0.0f;
             if (band_count > 0) {
                 switch (mode) {
-                case VisualizationMode::Bands: {
+                case VisualizationMode::Bands:
+                case VisualizationMode::Digital: {
                     const float band_t = static_cast<float>(r) / static_cast<float>(grid_rows);
                     band_index = std::min<std::size_t>(band_count - 1,
                                                         static_cast<std::size_t>(band_t * static_cast<float>(band_count)));
@@ -257,49 +271,128 @@ void draw_grid(notcurses* nc,
             const float band_energy = (band_index < band_count) ? bands[band_index] : 0.0f;
             const float energy_level = normalize_energy(band_energy);
 
-            const float column_phase = static_cast<float>(c) / std::max(1, grid_cols - 1);
-            const float time_wave = std::sin(time_s * 1.3f + column_phase * 3.0f);
-            const float shimmer = std::sin(time_s * 0.9f + r * 0.35f + c * 0.22f);
+            const float column_ratio = grid_cols > 1 ? static_cast<float>(c) / static_cast<float>(grid_cols - 1) : 0.0f;
+            const float time_wave = use_digital ? 0.0f : std::sin(time_s * 1.3f + column_ratio * 3.0f);
+            const float shimmer = use_digital ? 0.0f : std::sin(time_s * 0.9f + r * 0.35f + c * 0.22f);
 
-            float base_hue = column_phase;
-            if (band_count > 0) {
-                switch (mode) {
-                case VisualizationMode::Bands:
-                    base_hue = static_cast<float>(band_index) / static_cast<float>(band_count);
+            float target_r = 0.0f;
+            float target_g = 0.0f;
+            float target_b = 0.0f;
+
+            if (use_digital) {
+                Rgb base_color{200, 200, 200};
+                int quantization_levels = 6;
+                float design_multiplier = 1.0f;
+                float beat_floor = 0.0f;
+
+                switch (palette) {
+                case ColorPalette::DigitalAmber:
+                    base_color = Rgb{255, 180, 48};
+                    quantization_levels = 5;
+                    if (beat_strength > 0.6f) {
+                        beat_floor = 0.85f;
+                    }
                     break;
-                case VisualizationMode::Radial: {
-                    const float dr = static_cast<float>(r) - center_row;
-                    const float dc = static_cast<float>(c) - center_col;
-                    const float angle = std::atan2(dr, dc);
-                    base_hue = std::fmod(angle * inv_two_pi + 1.0f, 1.0f);
+                case ColorPalette::DigitalCyan: {
+                    base_color = Rgb{48, 220, 255};
+                    quantization_levels = 6;
+                    const int scan_rate = 4;
+                    if (grid_cols > 0) {
+                        const int step = static_cast<int>(time_s * static_cast<float>(scan_rate));
+                        int scan_col = 0;
+                        if (grid_cols > 0) {
+                            scan_col = step % grid_cols;
+                            if (scan_col < 0) {
+                                scan_col += grid_cols;
+                            }
+                        }
+                        const int distance = std::abs(c - scan_col);
+                        if (distance == 0) {
+                            design_multiplier = 1.35f;
+                        } else if (distance == 1) {
+                            design_multiplier = 1.1f;
+                        } else {
+                            design_multiplier = 0.85f;
+                        }
+                    }
                     break;
                 }
-                case VisualizationMode::Trails:
-                    base_hue = band_mix;
+                case ColorPalette::DigitalViolet: {
+                    base_color = Rgb{208, 64, 255};
+                    quantization_levels = 7;
+                    const int toggle = static_cast<int>(time_s * 8.0f) % 2;
+                    const int parity = (r + c + toggle) % 2;
+                    design_multiplier = (parity == 0) ? 1.2f : 0.6f;
                     break;
                 }
+                default:
+                    break;
+                }
+
+                const float base_r = static_cast<float>(base_color.r) / 255.0f;
+                const float base_g = static_cast<float>(base_color.g) / 255.0f;
+                const float base_b = static_cast<float>(base_color.b) / 255.0f;
+
+                const float beat_gain = 1.0f + clamp01(beat_strength) * 0.6f;
+                float intensity = clamp01(energy_level * beat_gain * design_multiplier);
+                if (beat_floor > 0.0f) {
+                    intensity = std::max(intensity, beat_floor);
+                }
+                if (quantization_levels > 1) {
+                    intensity = std::round(intensity * static_cast<float>(quantization_levels)) /
+                                static_cast<float>(quantization_levels);
+                }
+                if (intensity < 0.05f) {
+                    intensity = 0.0f;
+                }
+
+                target_r = clamp01(base_r * intensity);
+                target_g = clamp01(base_g * intensity);
+                target_b = clamp01(base_b * intensity);
+            } else {
+                float base_hue = column_ratio;
+                if (band_count > 0) {
+                    switch (mode) {
+                    case VisualizationMode::Bands:
+                        base_hue = static_cast<float>(band_index) / static_cast<float>(band_count);
+                        break;
+                    case VisualizationMode::Radial: {
+                        const float dr = static_cast<float>(r) - center_row;
+                        const float dc = static_cast<float>(c) - center_col;
+                        const float angle = std::atan2(dr, dc);
+                        base_hue = std::fmod(angle * inv_two_pi + 1.0f, 1.0f);
+                        break;
+                    }
+                    case VisualizationMode::Trails:
+                        base_hue = band_mix;
+                        break;
+                    case VisualizationMode::Digital:
+                        base_hue = static_cast<float>(band_index) / std::max<std::size_t>(1, band_count);
+                        break;
+                    }
+                }
+
+                const float hue_shift = std::fmod(time_s * 0.05f + column_ratio * 0.15f, 1.0f);
+
+                float hue = std::fmod(base_hue + hue_shift, 1.0f);
+                float saturation = clamp01(0.55f + energy_level * 0.4f + shimmer * 0.05f);
+                float brightness = clamp01(0.12f + energy_level * (0.82f + beat_flash * 0.35f) + time_wave * 0.12f +
+                                           beat_flash * 0.12f);
+
+                if (palette == ColorPalette::WarmCool) {
+                    const float warm_cool_base = clamp01(band_mix);
+                    const float warm_cool_hue = std::fmod(0.58f - warm_cool_base * 0.42f + shimmer * 0.02f, 1.0f);
+                    hue = std::fmod(warm_cool_hue + beat_flash * 0.05f, 1.0f);
+                    saturation = clamp01(0.45f + energy_level * 0.35f + shimmer * 0.08f);
+                    brightness = clamp01(0.18f + energy_level * (0.75f + beat_flash * 0.45f) + time_wave * 0.08f +
+                                          beat_flash * 0.18f);
+                }
+
+                const Rgb target_color = hsl_to_rgb(hue, saturation, brightness);
+                target_r = clamp01(static_cast<float>(target_color.r) / 255.0f);
+                target_g = clamp01(static_cast<float>(target_color.g) / 255.0f);
+                target_b = clamp01(static_cast<float>(target_color.b) / 255.0f);
             }
-
-            const float hue_shift = std::fmod(time_s * 0.05f + column_phase * 0.15f, 1.0f);
-
-            float hue = std::fmod(base_hue + hue_shift, 1.0f);
-            float saturation = clamp01(0.55f + energy_level * 0.4f + shimmer * 0.05f);
-            float brightness = clamp01(0.12f + energy_level * (0.82f + beat_flash * 0.35f) + time_wave * 0.12f +
-                                       beat_flash * 0.12f);
-
-            if (palette == ColorPalette::WarmCool) {
-                const float warm_cool_base = clamp01(band_mix);
-                const float warm_cool_hue = std::fmod(0.58f - warm_cool_base * 0.42f + shimmer * 0.02f, 1.0f);
-                hue = std::fmod(warm_cool_hue + beat_flash * 0.05f, 1.0f);
-                saturation = clamp01(0.45f + energy_level * 0.35f + shimmer * 0.08f);
-                brightness = clamp01(0.18f + energy_level * (0.75f + beat_flash * 0.45f) + time_wave * 0.08f +
-                                      beat_flash * 0.18f);
-            }
-
-            const Rgb target_color = hsl_to_rgb(hue, saturation, brightness);
-            const float target_r = clamp01(static_cast<float>(target_color.r) / 255.0f);
-            const float target_g = clamp01(static_cast<float>(target_color.g) / 255.0f);
-            const float target_b = clamp01(static_cast<float>(target_color.b) / 255.0f);
 
             const std::size_t cell_index = static_cast<std::size_t>(r * grid_cols + c);
             if (cell_index >= cache.cells.size()) {
@@ -312,7 +405,7 @@ void draw_grid(notcurses* nc,
                 state.smooth_g = target_g;
                 state.smooth_b = target_b;
             } else {
-                constexpr float smoothing = 0.22f;
+                const float smoothing = use_digital ? 0.55f : 0.22f;
                 state.smooth_r += (target_r - state.smooth_r) * smoothing;
                 state.smooth_g += (target_g - state.smooth_g) * smoothing;
                 state.smooth_b += (target_b - state.smooth_b) * smoothing;

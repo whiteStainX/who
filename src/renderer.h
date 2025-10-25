@@ -12,11 +12,15 @@ enum class VisualizationMode {
     Bands,
     Radial,
     Trails,
+    Digital,
 };
 
 enum class ColorPalette {
     Rainbow,
     WarmCool,
+    DigitalAmber,
+    DigitalCyan,
+    DigitalViolet,
 };
 
 void draw_grid(notcurses* nc,
