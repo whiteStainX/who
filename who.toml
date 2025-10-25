@@ -13,6 +13,8 @@ ring_frames = 8192
 device = ""
 # Optional software gain applied before DSP; keep at 1.0 for unity.
 input_gain = 1.0
+# Enable loopback/system audio capture when supported by the platform.
+system = false
 
 [audio.file]
 enabled = true

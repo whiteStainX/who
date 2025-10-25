@@ -7,8 +7,44 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cctype>
 #include <cstring>
+#include <string>
+#include <string_view>
 #include <vector>
+
+namespace {
+
+std::string to_lower_copy(std::string_view value) {
+    std::string lower(value);
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return lower;
+}
+
+bool equals_ignore_case(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool contains_ignore_case(std::string_view haystack, std::string_view needle) {
+    if (needle.empty()) {
+        return true;
+    }
+    std::string lower_haystack = to_lower_copy(haystack);
+    std::string lower_needle = to_lower_copy(needle);
+    return lower_haystack.find(lower_needle) != std::string::npos;
+}
+
+} // namespace
 
 namespace who {
 
@@ -65,14 +101,20 @@ std::size_t AudioEngine::FloatRingBuffer::read(float* dest, std::size_t count) {
 AudioEngine::AudioEngine(ma_uint32 sample_rate,
                          ma_uint32 channels,
                          std::size_t ring_frames,
-                         std::string file_path)
+                         std::string file_path,
+                         std::string device_name,
+                         bool system_audio)
     : sample_rate_(sample_rate),
       channels_(channels),
       ring_buffer_(ring_frames * channels),
       dropped_samples_(0),
       mode_(file_path.empty() ? Mode::Capture : Mode::FileStream),
       file_path_(std::move(file_path)),
+      device_name_(std::move(device_name)),
+      system_audio_(system_audio),
       device_initialized_(false),
+      context_initialized_(false),
+      have_device_id_(false),
       decoder_initialized_(false),
       decoder_channels_(0),
       decoder_sample_rate_(0),
@@ -82,24 +124,145 @@ AudioEngine::AudioEngine(ma_uint32 sample_rate,
 AudioEngine::~AudioEngine() { stop(); }
 
 bool AudioEngine::start() {
+    last_error_.clear();
     if (mode_ == Mode::Capture) {
         if (device_initialized_) {
             return true;
         }
 
-        ma_device_config config = ma_device_config_init(ma_device_type_capture);
+        ma_device_type device_type = ma_device_type_capture;
+#if defined(_WIN32)
+        if (system_audio_) {
+            device_type = ma_device_type_loopback;
+        }
+#endif
+        ma_device_config config = ma_device_config_init(device_type);
         config.sampleRate = sample_rate_;
         config.capture.format = ma_format_f32;
         config.capture.channels = channels_;
         config.dataCallback = &AudioEngine::data_callback;
         config.pUserData = this;
 
-        if (ma_device_init(nullptr, &config, &device_) != MA_SUCCESS) {
+        ma_context* context = nullptr;
+        if (!device_name_.empty() || system_audio_) {
+            ma_context_config context_config = ma_context_config_init();
+            if (ma_context_init(nullptr, 0, &context_config, &context_) != MA_SUCCESS) {
+                last_error_ = "failed to initialize audio context";
+                return false;
+            }
+            context_initialized_ = true;
+            context = &context_;
+
+            ma_device_info* playback_infos = nullptr;
+            ma_uint32 playback_count = 0;
+            ma_device_info* capture_infos = nullptr;
+            ma_uint32 capture_count = 0;
+            if (ma_context_get_devices(context, &playback_infos, &playback_count, &capture_infos, &capture_count) != MA_SUCCESS) {
+                last_error_ = "failed to enumerate audio devices";
+                ma_context_uninit(&context_);
+                context_initialized_ = false;
+                return false;
+            }
+
+            auto select_capture_id = [&](std::string_view name) -> bool {
+                for (ma_uint32 i = 0; i < capture_count; ++i) {
+                    if (equals_ignore_case(capture_infos[i].name, name) || contains_ignore_case(capture_infos[i].name, name)) {
+                        device_id_ = capture_infos[i].id;
+                        have_device_id_ = true;
+                        return true;
+                    }
+                }
+                for (ma_uint32 i = 0; i < playback_count; ++i) {
+                    if (equals_ignore_case(playback_infos[i].name, name) || contains_ignore_case(playback_infos[i].name, name)) {
+                        device_id_ = playback_infos[i].id;
+                        have_device_id_ = true;
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            if (!device_name_.empty()) {
+                if (!select_capture_id(device_name_)) {
+                    last_error_ = "requested device not found: '" + device_name_ + "'";
+                    ma_context_uninit(&context_);
+                    context_initialized_ = false;
+                    return false;
+                }
+            } else if (system_audio_) {
+#if defined(_WIN32)
+                if (ma_context_is_loopback_supported(context) == MA_FALSE) {
+                    last_error_ = "loopback capture is not supported on this backend";
+                    ma_context_uninit(&context_);
+                    context_initialized_ = false;
+                    return false;
+                }
+                have_device_id_ = false;
+#elif defined(__APPLE__)
+                bool found_blackhole = false;
+                for (ma_uint32 i = 0; i < capture_count; ++i) {
+                    if (contains_ignore_case(capture_infos[i].name, "blackhole")) {
+                        device_id_ = capture_infos[i].id;
+                        have_device_id_ = true;
+                        found_blackhole = true;
+                        break;
+                    }
+                }
+                if (!found_blackhole) {
+                    last_error_ =
+                        "BlackHole device not found. Install blackhole-2ch and select it as part of a Multi-Output Device.";
+                    ma_context_uninit(&context_);
+                    context_initialized_ = false;
+                    return false;
+                }
+#elif defined(__linux__)
+                bool found_monitor = false;
+                for (ma_uint32 i = 0; i < capture_count; ++i) {
+                    if (contains_ignore_case(capture_infos[i].name, ".monitor")) {
+                        device_id_ = capture_infos[i].id;
+                        have_device_id_ = true;
+                        found_monitor = true;
+                        break;
+                    }
+                }
+                if (!found_monitor) {
+                    last_error_ =
+                        "No PulseAudio monitor source found. Use 'pactl list sources short' and pass --device <monitor>.";
+                    ma_context_uninit(&context_);
+                    context_initialized_ = false;
+                    return false;
+                }
+#else
+                have_device_id_ = false;
+#endif
+            }
+
+            if (have_device_id_) {
+                config.capture.pDeviceID = &device_id_;
+            }
+        } else {
+            context_initialized_ = false;
+            have_device_id_ = false;
+        }
+
+        if (ma_device_init(context, &config, &device_) != MA_SUCCESS) {
+            last_error_ = "failed to initialize audio capture device";
+            if (context_initialized_) {
+                ma_context_uninit(&context_);
+                context_initialized_ = false;
+            }
+            have_device_id_ = false;
             return false;
         }
 
         if (ma_device_start(&device_) != MA_SUCCESS) {
             ma_device_uninit(&device_);
+            if (context_initialized_) {
+                ma_context_uninit(&context_);
+                context_initialized_ = false;
+            }
+            have_device_id_ = false;
+            last_error_ = "failed to start audio capture device";
             return false;
         }
 
@@ -156,6 +319,11 @@ void AudioEngine::stop() {
         }
 
         ma_device_uninit(&device_);
+        if (context_initialized_) {
+            ma_context_uninit(&context_);
+            context_initialized_ = false;
+        }
+        have_device_id_ = false;
         device_initialized_ = false;
         return;
     }

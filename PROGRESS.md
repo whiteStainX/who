@@ -82,6 +82,12 @@
 - [x] Introduced three single-colour designs (Digital Amber, Digital Cyan, Digital Violet) with discrete movement accents.
 - [x] Set the default `who.toml` to the Digital Amber design and documented runtime/persistent selection flows.
 
+## Phase 10 – System Audio Capture ✅
+
+- [x] Added cross-platform system audio capture with CLI/config toggles for loopback and device selection.
+- [x] Auto-detects WASAPI loopback, macOS BlackHole virtual input, or PulseAudio monitor sources as appropriate.
+- [x] Updated documentation with OS-specific setup guidance for capturing Spotify/YouTube without microphone noise.
+
 ## Backlog
 
 - [ ] Cross-platform packaging, CI, and distribution improvements.

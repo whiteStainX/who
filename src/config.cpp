@@ -328,6 +328,11 @@ ConfigLoadResult load_app_config(const std::string& path) {
                   result.config.audio.capture.input_gain,
                   parse_float32,
                   result.warnings);
+    assign_scalar(raw,
+                  "audio.capture.system",
+                  result.config.audio.capture.system,
+                  parse_bool,
+                  result.warnings);
 
     assign_scalar(raw,
                   "audio.file.enabled",

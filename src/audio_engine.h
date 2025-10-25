@@ -20,7 +20,12 @@ struct AudioMetrics {
 
 class AudioEngine {
 public:
-    AudioEngine(ma_uint32 sample_rate, ma_uint32 channels, std::size_t ring_frames, std::string file_path = {});
+    AudioEngine(ma_uint32 sample_rate,
+                ma_uint32 channels,
+                std::size_t ring_frames,
+                std::string file_path = {},
+                std::string device_name = {},
+                bool system_audio = false);
     ~AudioEngine();
 
     bool start();
@@ -28,6 +33,7 @@ public:
 
     std::size_t read_samples(float* dest, std::size_t max_samples);
     std::size_t dropped_samples() const;
+    const std::string& last_error() const { return last_error_; }
 
     ma_uint32 channels() const { return channels_; }
     bool using_file_stream() const { return mode_ == Mode::FileStream; }
@@ -58,9 +64,17 @@ private:
     std::atomic<std::size_t> dropped_samples_;
     Mode mode_;
     std::string file_path_;
+    std::string device_name_;
+    bool system_audio_;
+    std::string last_error_;
 
     ma_device device_{};
     bool device_initialized_;
+
+    ma_context context_{};
+    bool context_initialized_;
+    ma_device_id device_id_{};
+    bool have_device_id_;
 
     ma_decoder decoder_{};
     bool decoder_initialized_;
