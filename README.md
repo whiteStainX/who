@@ -46,6 +46,7 @@ To visualise only what the system is playing (Spotify, YouTube, games, etc.) con
   1. Install the free virtual driver: `brew install --cask blackhole-2ch`.
   2. In *Audio MIDI Setup*, create a *Multi-Output Device* that contains both **BlackHole 2ch** and your speakers.
   3. Set the Multi-Output Device as the system output, then run `./build/who --system` (miniaudio will expose “BlackHole” as an input device).
+  > For advanced setup with specific terminals like `cool-retro-term`, see `MacOS.md`.
 - **Linux (PulseAudio/PipeWire)**: `--system` auto-selects the default sink monitor (name ends with `.monitor`). To pick another source, list them via `pactl list sources short` and pass `--device <monitor name>`.
 
 If the helper cannot locate the required loopback/monitor device, the program prints guidance on how to fix the environment.

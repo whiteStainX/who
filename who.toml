@@ -39,8 +39,8 @@ beat_sensitivity = 0.8
 enable_flux = true
 
 [visual.grid]
-rows = 16
-cols = 16
+rows = 8
+cols = 8
 min = 8
 max = 32
 
