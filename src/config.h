@@ -68,6 +68,7 @@ struct RuntimeConfig {
     bool show_metrics = true;
     bool allow_resize = true;
     bool beat_flash = true;
+    bool show_overlay_metrics = false; // New config option, default to false
 };
 
 struct PluginConfig {

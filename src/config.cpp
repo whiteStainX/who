@@ -413,6 +413,7 @@ ConfigLoadResult load_app_config(const std::string& path) {
     assign_scalar(raw, "runtime.show_metrics", result.config.runtime.show_metrics, parse_bool, result.warnings);
     assign_scalar(raw, "runtime.allow_resize", result.config.runtime.allow_resize, parse_bool, result.warnings);
     assign_scalar(raw, "runtime.beat_flash", result.config.runtime.beat_flash, parse_bool, result.warnings);
+    assign_scalar(raw, "runtime.show_overlay_metrics", result.config.runtime.show_overlay_metrics, parse_bool, result.warnings);
 
     assign_string(raw, "plugins.directory", result.config.plugins.directory);
     const auto array_it = raw.arrays.find("plugins.autoload");

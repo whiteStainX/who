@@ -34,7 +34,8 @@ void draw_grid(notcurses* nc,
                const std::vector<float>& bands,
                float beat_strength,
                bool file_stream,
-               bool show_metrics);
+               bool show_metrics,
+               bool show_overlay_metrics);
 
 const char* mode_name(VisualizationMode mode);
 const char* palette_name(ColorPalette palette);
