@@ -13,6 +13,8 @@ ring_frames = 8192
 device = ""
 # Optional software gain applied before DSP; keep at 1.0 for unity.
 input_gain = 1.0
+# Enable loopback/system audio capture when supported by the platform.
+system = false
 
 [audio.file]
 enabled = true
@@ -37,8 +39,8 @@ beat_sensitivity = 0.8
 enable_flux = true
 
 [visual.grid]
-rows = 16
-cols = 16
+rows = 8
+cols = 8
 min = 8
 max = 32
 

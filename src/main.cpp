@@ -19,6 +19,8 @@ int main(int argc, char** argv) {
 
     std::string config_path = "who.toml";
     std::string file_path;
+    std::string device_name_override;
+    int system_override = -1; // -1 = use config, 0 = mic, 1 = system
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if ((arg == "--config" || arg == "-c") && i + 1 < argc) {
@@ -29,6 +31,19 @@ int main(int argc, char** argv) {
         if ((arg == "--file" || arg == "-f") && i + 1 < argc) {
             file_path = argv[i + 1];
             ++i;
+            continue;
+        }
+        if ((arg == "--device" || arg == "-d") && i + 1 < argc) {
+            device_name_override = argv[i + 1];
+            ++i;
+            continue;
+        }
+        if (arg == "--system") {
+            system_override = 1;
+            continue;
+        }
+        if (arg == "--mic") {
+            system_override = 0;
             continue;
         }
     }
@@ -48,6 +63,17 @@ int main(int argc, char** argv) {
         file_path = config.audio.file.path;
     }
 
+    std::string capture_device = config.audio.capture.device;
+    if (!device_name_override.empty()) {
+        capture_device = device_name_override;
+    }
+    bool use_system_audio = config.audio.capture.system;
+    if (system_override == 1) {
+        use_system_audio = true;
+    } else if (system_override == 0) {
+        use_system_audio = false;
+    }
+
     const bool use_file_stream = config.audio.file.enabled && !file_path.empty();
     const ma_uint32 sample_rate = config.audio.capture.sample_rate;
     ma_uint32 channels = use_file_stream ? config.audio.file.channels : config.audio.capture.channels;
@@ -56,12 +82,21 @@ int main(int argc, char** argv) {
     }
     const std::size_t ring_frames = std::max<std::size_t>(1024, config.audio.capture.ring_frames);
 
-    who::AudioEngine audio(sample_rate, channels, ring_frames, use_file_stream ? file_path : std::string{});
+    who::AudioEngine audio(sample_rate,
+                           channels,
+                           ring_frames,
+                           use_file_stream ? file_path : std::string{},
+                           capture_device,
+                           use_system_audio);
     bool audio_active = false;
     if (use_file_stream || config.audio.capture.enabled) {
         audio_active = audio.start();
         if (!audio_active) {
-            std::cerr << "[audio] failed to start audio backend" << std::endl;
+            std::cerr << "[audio] failed to start audio backend";
+            if (!audio.last_error().empty()) {
+                std::cerr << ": " << audio.last_error();
+            }
+            std::cerr << std::endl;
         }
     } else {
         std::clog << "[audio] capture disabled; running without live audio" << std::endl;

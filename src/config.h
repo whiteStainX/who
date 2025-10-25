@@ -16,6 +16,7 @@ struct AudioCaptureConfig {
     std::size_t ring_frames = 8192;
     std::string device;
     float input_gain = 1.0f;
+    bool system = false;
 };
 
 struct AudioFileConfig {
