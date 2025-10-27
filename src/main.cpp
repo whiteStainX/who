@@ -231,6 +231,9 @@ int main(int argc, char** argv) {
                     mode = who::VisualizationMode::Digital;
                     break;
                 case who::VisualizationMode::Digital:
+                    mode = who::VisualizationMode::Ascii;
+                    break;
+                case who::VisualizationMode::Ascii:
                     mode = who::VisualizationMode::Bands;
                     break;
                 }
