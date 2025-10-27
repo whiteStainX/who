@@ -56,7 +56,7 @@ If the helper cannot locate the required loopback/monitor device, the program pr
 Interact with the visualizer while it is running:
 
 - `q`/`Q`: Quit the program immediately.
-- `m`/`M`: Cycle through the visualization modes (Bands → Radial → Trails → Digital Pulse → …).
+- `m`/`M`: Cycle through the visualization modes (Bands → Radial → Trails → Digital Pulse → ASCII Flux → Bands).
 - `p`/`P`: Cycle through the color designs (Rainbow → Warm/Cool → Digital Amber → Digital Cyan → Digital Violet → …).
 - Arrow keys: Adjust grid rows (Up/Down) and columns (Left/Right) between 8 and 32 cells.
 - `[` / `]`: Decrease or increase audio sensitivity to tune brightness response.
@@ -85,3 +85,12 @@ and adjust `visual.palette` to pin any of the variants:
 - **Digital Violet** – A saturated violet lattice that alternates in a checker cadence for a punchy, club-ready pulse.
 
 Switch designs at runtime with the `p` key or edit the `who.toml` values above to set a persistent default.
+
+### Phase 10 – ASCII Flux Cartography
+
+Phase 10 expands the renderer with **ASCII Flux**, a densely textured mode inspired by notcurses-based map demos such as MapSCII.
+Instead of colouring solid blocks, the grid is tessellated into shimmering ASCII glyphs that react to both band energy and
+high-frequency detail. Beat events push the pattern into brighter characters while time-varying jitter keeps the output busy and
+alive. The mode respects the existing colour palettes—warm gradients remain smooth, while digital palettes yield crisp monochrome
+glows—and fully reuses the audio/DSP pipeline so no extra setup is required. Select it at runtime via the `m` key or pin it in
+configuration with `visual.mode = "ascii"`.

@@ -489,6 +489,9 @@ VisualizationMode visualization_mode_from_string(const std::string& value, Visua
     if (lower == "digital" || lower == "digital_pulse" || lower == "digital-pulse") {
         return VisualizationMode::Digital;
     }
+    if (lower == "ascii" || lower == "ascii_flux" || lower == "ascii-flux" || lower == "flux") {
+        return VisualizationMode::Ascii;
+    }
     return fallback;
 }
 

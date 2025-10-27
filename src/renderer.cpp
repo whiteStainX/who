@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace who {
 namespace {
@@ -19,6 +20,7 @@ struct CellState {
     float smooth_g{0.0f};
     float smooth_b{0.0f};
     Rgb color{0, 0, 0};
+    char glyph{' '};
     bool valid{false};
 };
 
@@ -88,6 +90,9 @@ Rgb hsl_to_rgb(float h, float s, float l) {
                static_cast<uint8_t>(std::round(b * 255.0f))};
 }
 
+constexpr std::string_view kAsciiGlyphs =
+    " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
+
 std::string format_band_meter(const std::vector<float>& bands) {
     static const std::string glyphs = " .:-=+*#%@";
     if (bands.empty()) {
@@ -117,6 +122,8 @@ const char* mode_name(VisualizationMode mode) {
         return "Trails";
     case VisualizationMode::Digital:
         return "Digital Pulse";
+    case VisualizationMode::Ascii:
+        return "ASCII Flux";
     default:
         return "Unknown";
     }
@@ -157,10 +164,14 @@ void draw_grid(notcurses* nc,
     unsigned int plane_cols = 0;
     ncplane_dim_yx(stdplane, &plane_rows, &plane_cols);
 
-    const int cell_h_from_rows = static_cast<int>(plane_rows) / grid_rows;
-    const int cell_h_from_cols = static_cast<int>(plane_cols) / (grid_cols * 2);
+    const bool ascii_mode = mode == VisualizationMode::Ascii;
+
+    const int cell_h_from_rows = grid_rows > 0 ? static_cast<int>(plane_rows) / grid_rows : 0;
+    const int cell_h_from_cols = ascii_mode ? (grid_cols > 0 ? static_cast<int>(plane_cols) / grid_cols : 0)
+                                            : (grid_cols > 0 ? static_cast<int>(plane_cols) / (grid_cols * 2) : 0);
     const int cell_h = std::max(1, std::min(cell_h_from_rows, cell_h_from_cols));
-    const int cell_w = cell_h * 2;
+    const int cell_w = ascii_mode ? std::max(1, grid_cols > 0 ? static_cast<int>(plane_cols) / grid_cols : 1)
+                                  : cell_h * 2;
 
     const int grid_height = cell_h * grid_rows;
     const int grid_width = cell_w * grid_cols;
@@ -187,8 +198,8 @@ void draw_grid(notcurses* nc,
 
     ncplane_set_fg_default(stdplane);
 
-    const int v_gap = 1;
-    const int h_gap = 2;
+    const int v_gap = ascii_mode ? 0 : 1;
+    const int h_gap = ascii_mode ? 0 : 2;
     const int fill_w = std::max(1, cell_w - h_gap);
     if (static_cast<int>(cache.fill.size()) != fill_w) {
         cache.fill.assign(static_cast<std::size_t>(fill_w), ' ');
@@ -227,7 +238,7 @@ void draw_grid(notcurses* nc,
     const bool digital_mode = mode == VisualizationMode::Digital;
     const bool digital_palette = palette == ColorPalette::DigitalAmber || palette == ColorPalette::DigitalCyan ||
                                  palette == ColorPalette::DigitalViolet;
-    const bool use_digital = digital_mode || digital_palette;
+    const bool use_digital = (digital_mode || digital_palette) && !ascii_mode;
 
     const float beat_flash = clamp01(beat_strength);
 
@@ -238,7 +249,8 @@ void draw_grid(notcurses* nc,
             if (band_count > 0) {
                 switch (mode) {
                 case VisualizationMode::Bands:
-                case VisualizationMode::Digital: {
+                case VisualizationMode::Digital:
+                case VisualizationMode::Ascii: {
                     const float band_t = static_cast<float>(r) / static_cast<float>(grid_rows);
                     band_index = std::min<std::size_t>(band_count - 1,
                                                         static_cast<std::size_t>(band_t * static_cast<float>(band_count)));
@@ -279,6 +291,22 @@ void draw_grid(notcurses* nc,
             float target_r = 0.0f;
             float target_g = 0.0f;
             float target_b = 0.0f;
+            float ascii_drive = 0.0f;
+            char target_glyph = ' ';
+
+            if (ascii_mode) {
+                float high_energy = 0.0f;
+                if (band_count > 0) {
+                    const std::size_t lookahead = std::min<std::size_t>(band_count - 1,
+                                                                         band_index + std::max<std::size_t>(1, band_count / 6));
+                    high_energy = normalize_energy(bands[lookahead]);
+                }
+                const float jitter_a = std::sin(time_s * 2.6f + static_cast<float>(r) * 0.9f);
+                const float jitter_b = std::cos(time_s * 1.8f + static_cast<float>(c) * 0.7f);
+                const float jitter = (jitter_a + jitter_b) * 0.25f + 0.5f;
+                ascii_drive = clamp01(0.45f * energy_level + 0.25f * high_energy + 0.15f * jitter + 0.15f * band_mix);
+                ascii_drive = clamp01(ascii_drive + beat_strength * 0.25f);
+            }
 
             if (use_digital) {
                 Rgb base_color{200, 200, 200};
@@ -378,6 +406,7 @@ void draw_grid(notcurses* nc,
                         base_hue = band_mix;
                         break;
                     case VisualizationMode::Digital: // Should not be reached due to use_digital check
+                    case VisualizationMode::Ascii:    // Should not be reached due to ascii_mode check
                         base_hue = static_cast<float>(band_index) / std::max<std::size_t>(1, band_count);
                         break;
                     }
@@ -399,6 +428,11 @@ void draw_grid(notcurses* nc,
                                           beat_flash * 0.18f);
                 }
 
+                if (ascii_mode) {
+                    saturation = clamp01(saturation + 0.2f + ascii_drive * 0.1f);
+                    brightness = clamp01(brightness + ascii_drive * 0.4f + beat_flash * 0.1f);
+                }
+
                 const Rgb target_color = hsl_to_rgb(hue, saturation, brightness);
                 target_r = clamp01(static_cast<float>(target_color.r) / 255.0f);
                 target_g = clamp01(static_cast<float>(target_color.g) / 255.0f);
@@ -417,11 +451,34 @@ void draw_grid(notcurses* nc,
                 state.smooth_b = target_b;
             } else {
                 // Adjust smoothing based on beat_strength for more reactivity
-                const float base_smoothing = use_digital ? 0.55f : 0.22f;
+                float base_smoothing = 0.22f;
+                if (use_digital) {
+                    base_smoothing = 0.55f;
+                } else if (ascii_mode) {
+                    base_smoothing = 0.3f;
+                }
                 const float dynamic_smoothing = base_smoothing + beat_strength * 0.3f; // More reactive on beat
                 state.smooth_r += (target_r - state.smooth_r) * dynamic_smoothing;
                 state.smooth_g += (target_g - state.smooth_g) * dynamic_smoothing;
                 state.smooth_b += (target_b - state.smooth_b) * dynamic_smoothing;
+            }
+
+            if (ascii_mode) {
+                const float luma = clamp01(state.smooth_r * 0.299f + state.smooth_g * 0.587f + state.smooth_b * 0.114f);
+                const float swirl = (std::sin(time_s * 6.2f + static_cast<float>(r) * 0.8f - static_cast<float>(c) * 0.9f) + 1.0f) *
+                                    0.5f;
+                const float texture = (std::sin(time_s * 3.3f + band_mix * 6.2831853f + static_cast<float>(r + c) * 0.35f) + 1.0f) *
+                                      0.5f;
+                const float ascii_mix = clamp01(0.45f * ascii_drive + 0.35f * luma + 0.2f * swirl);
+                const float ascii_value = clamp01(ascii_mix * 0.75f + texture * 0.25f + beat_strength * 0.2f);
+                const std::size_t glyph_count = kAsciiGlyphs.size();
+                const std::size_t glyph_idx = (glyph_count > 1)
+                                                  ? std::min<std::size_t>(
+                                                        glyph_count - 1,
+                                                        static_cast<std::size_t>(std::round(
+                                                            ascii_value * static_cast<float>(glyph_count - 1))))
+                                                  : 0;
+                target_glyph = static_cast<char>(kAsciiGlyphs[glyph_idx]);
             }
 
             const Rgb color{static_cast<uint8_t>(std::round(clamp01(state.smooth_r) * 255.0f)),
@@ -431,25 +488,48 @@ void draw_grid(notcurses* nc,
             bool needs_update = full_refresh || !state.valid || state.color.r != color.r || state.color.g != color.g ||
                                 state.color.b != color.b;
 
+            if (ascii_mode && state.glyph != target_glyph) {
+                needs_update = true;
+            }
+
             if (!needs_update) {
                 continue;
             }
 
-            for (int dy = 0; dy < draw_height; ++dy) {
-                const int y = offset_y + r * cell_h + dy;
-                if (y >= static_cast<int>(plane_rows)) {
-                    continue;
-                }
-                const int x = offset_x + c * cell_w;
-                if (x >= static_cast<int>(plane_cols)) {
-                    continue;
-                }
+            if (ascii_mode) {
+                const std::string ascii_fill(static_cast<std::size_t>(fill_w), target_glyph);
+                for (int dy = 0; dy < draw_height; ++dy) {
+                    const int y = offset_y + r * cell_h + dy;
+                    if (y >= static_cast<int>(plane_rows)) {
+                        continue;
+                    }
+                    const int x = offset_x + c * cell_w;
+                    if (x >= static_cast<int>(plane_cols)) {
+                        continue;
+                    }
 
-                ncplane_set_bg_rgb8(stdplane, color.r, color.g, color.b);
-                ncplane_putstr_yx(stdplane, y, x, cell_fill.c_str());
+                    ncplane_set_bg_default(stdplane);
+                    ncplane_set_fg_rgb8(stdplane, color.r, color.g, color.b);
+                    ncplane_putstr_yx(stdplane, y, x, ascii_fill.c_str());
+                }
+            } else {
+                for (int dy = 0; dy < draw_height; ++dy) {
+                    const int y = offset_y + r * cell_h + dy;
+                    if (y >= static_cast<int>(plane_rows)) {
+                        continue;
+                    }
+                    const int x = offset_x + c * cell_w;
+                    if (x >= static_cast<int>(plane_cols)) {
+                        continue;
+                    }
+
+                    ncplane_set_bg_rgb8(stdplane, color.r, color.g, color.b);
+                    ncplane_putstr_yx(stdplane, y, x, cell_fill.c_str());
+                }
             }
 
             state.color = color;
+            state.glyph = target_glyph;
             state.valid = true;
         }
     }

@@ -13,6 +13,7 @@ enum class VisualizationMode {
     Radial,
     Trails,
     Digital,
+    Ascii,
 };
 
 enum class ColorPalette {
